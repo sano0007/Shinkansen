@@ -331,13 +331,16 @@ class Downloader:
         headers: dict,
         filename: str,
         episode_label: str = "",
+        output_dir: Optional[Path] = None,
     ) -> Optional[str]:
         """
         Download a video file with progress bar and resume support.
 
         Uses requests (not Playwright) for speed and resume capability.
         """
-        output_path = self.output_dir / filename
+        if output_dir is None:
+            output_dir = self.output_dir
+        output_path = output_dir / filename
 
         # Handle existing partial files (resume)
         existing_size = output_path.stat().st_size if output_path.exists() else 0
@@ -435,8 +438,23 @@ class Downloader:
 
         # Step 4: Download the file
         filename = safe_filename(anime_name, episode, quality)
+
+        # Check config for folder creation
+        from anime_pahe_dl.config import get_config
+        create_folder = get_config("create_folder", True)
+
+        # Determine output directory
+        if create_folder:
+            # Create anime-specific subfolder
+            anime_folder = re.sub(r"[^0-9A-Za-z]+", "_", anime_name).strip("_")
+            anime_folder = re.sub(r"_+", "_", anime_folder) or "Anime"
+            output_dir = self.output_dir / anime_folder
+            output_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            output_dir = self.output_dir
+
         return self._download_file(
-            video_url, dl_headers, filename, f"Ep {episode}"
+            video_url, dl_headers, filename, f"Ep {episode}", output_dir
         )
 
     def close(self):

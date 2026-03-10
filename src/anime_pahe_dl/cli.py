@@ -9,6 +9,9 @@ Usage:
     anime-dl download <session> --all
     anime-dl get "bleach"          # Interactive search & download
     anime-dl history               # Show download history
+    anime-dl library               # Show downloaded anime
+    anime-dl config show           # Show config
+    anime-dl config set quality 720
 
 Improvements:
 - Shows all info (quality, size, sub/dub) before downloading
@@ -18,6 +21,8 @@ Improvements:
 - Rich terminal output
 - Download history tracking
 - Interactive 'get' command for quick workflow
+- Config system with anime folder creation
+- Library management
 """
 
 import atexit
@@ -39,6 +44,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 
 from anime_pahe_dl.client import AnimePaheClient, Source
 from anime_pahe_dl.downloader import Downloader, safe_filename
+from anime_pahe_dl.config import load_config, save_config, set_config, DEFAULT_CONFIG
 
 console = Console()
 
@@ -607,6 +613,129 @@ def get(query, quality, dub, output):
             border_style="green" if failed == 0 else "yellow",
         )
     )
+
+
+@cli.group()
+def config():
+    """Manage configuration."""
+    pass
+
+
+@config.command("show")
+def config_show():
+    """Show current configuration."""
+    cfg = load_config()
+
+    table = Table(title="Configuration")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    for key, value in cfg.items():
+        table.add_row(key, str(value))
+
+    console.print(table)
+    console.print("\n[dim]Use 'anime-dl config set <key> <value>' to change[/dim]")
+
+
+@config.command("set")
+@click.argument("key")
+@click.argument("value", required=False)
+def config_set(key, value):
+    """Set a config value. Usage: config set <key> <value>"""
+    if key not in DEFAULT_CONFIG:
+        console.print(f"[red]Unknown config key: {key}[/red]")
+        console.print(f"[dim]Available: {', '.join(DEFAULT_CONFIG.keys())}[/dim]")
+        return
+
+    # Handle boolean values
+    if isinstance(DEFAULT_CONFIG[key], bool):
+        if value is None:
+            console.print(f"[red]Value required for {key} (true/false)[/red]")
+            return
+        value = value.lower() in ("true", "1", "yes")
+    elif isinstance(DEFAULT_CONFIG[key], int):
+        if value is None:
+            console.print(f"[red]Value required for {key} (number)[/red]")
+            return
+        value = int(value)
+
+    set_config(key, value)
+    console.print(f"[green]Set {key} = {value}[/green]")
+
+
+@cli.command()
+def library():
+    """Show downloaded anime library."""
+    history = load_history()
+
+    if not history:
+        console.print("[dim]No downloads yet.[/dim]")
+        return
+
+    # Group by anime
+    anime_list = {}
+    for item in history:
+        anime = item.get("anime", "Unknown")
+        if anime not in anime_list:
+            anime_list[anime] = {"episodes": set(), "quality": set(), "files": []}
+        anime_list[anime]["episodes"].add(item.get("episode"))
+        anime_list[anime]["quality"].add(item.get("quality"))
+        anime_list[anime]["files"].append(item.get("file", ""))
+
+    table = Table(title="Anime Library")
+    table.add_column("Anime", style="bold white")
+    table.add_column("Episodes", style="cyan", justify="right")
+    table.add_column("Quality", style="green")
+    table.add_column("Folder", style="dim", max_width=40)
+
+    for anime, data in sorted(anime_list.items()):
+        eps = len(data["episodes"])
+        qual = ", ".join(sorted(data["quality"]))
+        folder = Path(data["files"][0]).parent.name if data["files"] else "?"
+        table.add_row(anime, str(eps), qual, folder)
+
+    console.print(table)
+    console.print(f"\n[dim]Total: {len(anime_list)} anime[/dim]")
+
+
+@cli.command()
+@click.argument("query")
+def find(query):
+    """Find anime in library by name."""
+    history = load_history()
+
+    if not history:
+        console.print("[dim]No downloads yet.[/dim]")
+        return
+
+    # Find matching anime
+    matches = {}
+    for item in history:
+        anime = item.get("anime", "")
+        if query.lower() in anime.lower():
+            if anime not in matches:
+                matches[anime] = {"episodes": set(), "quality": set(), "files": []}
+            matches[anime]["episodes"].add(item.get("episode"))
+            matches[anime]["quality"].add(item.get("quality"))
+            matches[anime]["files"].append(item.get("file", ""))
+
+    if not matches:
+        console.print(f"[yellow]No matches for '{query}'[/yellow]")
+        return
+
+    table = Table(title=f"Results for '{query}'")
+    table.add_column("Anime", style="bold white")
+    table.add_column("Episodes", style="cyan", justify="right")
+    table.add_column("Quality", style="green")
+    table.add_column("Folder", style="dim", max_width=50)
+
+    for anime, data in sorted(matches.items()):
+        eps = len(data["episodes"])
+        qual = ", ".join(sorted(data["quality"]))
+        folder = data["files"][0] if data["files"] else "?"
+        table.add_row(anime, str(eps), qual, folder[:50])
+
+    console.print(table)
 
 
 if __name__ == "__main__":
