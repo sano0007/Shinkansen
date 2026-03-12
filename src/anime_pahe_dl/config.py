@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "auto_retry": True,
     "retry_count": 3,
     "create_folder": True,
+    "parallel_downloads": 1,
 }
 
 

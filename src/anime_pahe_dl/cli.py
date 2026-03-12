@@ -28,7 +28,6 @@ Improvements:
 import atexit
 import json
 import logging
-import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -36,15 +35,13 @@ from typing import Optional
 
 import click
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
-from rich.text import Text
 from rich.prompt import Prompt, Confirm
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.table import Table
 
 from anime_pahe_dl.client import AnimePaheClient, Source
+from anime_pahe_dl.config import load_config, set_config, DEFAULT_CONFIG
 from anime_pahe_dl.downloader import Downloader, safe_filename
-from anime_pahe_dl.config import load_config, save_config, set_config, DEFAULT_CONFIG
 
 console = Console()
 
@@ -554,42 +551,54 @@ def get(query, quality, dub, output):
         console.print("[yellow]Cancelled.[/yellow]")
         return
 
-    # Download
+    # Step 8: Pre-fetch sources for all episodes
+    console.print(f"\n[bold cyan]Preparing episodes...[/bold cyan]")
     dl = get_downloader(output)
-    success = 0
-    failed = 0
-    total = len(ep_numbers)
 
+    # Ensure client has Playwright context for sources
+    if client._pw_context:
+        dl.set_playwright_context(client._pw_context)
+
+    # Pre-fetch all sources
+    episode_data = []
     for i, ep_num in enumerate(ep_numbers, 1):
-        console.print(f"\n[bold cyan]── Episode {ep_num} ({i}/{total}) ──[/bold cyan]")
+        console.print(f"  Preparing episode {i}/{len(ep_numbers)}...", end="\r")
 
         # Get episode session
         ep_session = client.get_episode_session(session, ep_num)
         if not ep_session:
-            console.print(f"  [red]Episode not found[/red]")
-            failed += 1
             continue
 
         # Get sources
         srcs = client.get_sources(session, ep_session)
-        if client._pw_context:
-            dl.set_playwright_context(client._pw_context)
-
         if not srcs:
-            console.print(f"  [red]No sources available[/red]")
-            failed += 1
             continue
 
         # Select source
         source = select_source(srcs, quality, prefer_dub)
         if not source:
-            console.print(f"  [red]No matching source[/red]")
-            failed += 1
             continue
 
-        console.print(f"  [green]Selected:[/green] {source.quality}")
+        episode_data.append({
+            "num": ep_num,
+            "source": source,
+        })
 
-        # Download
+    console.print(f"  Prepared {len(episode_data)} episodes              ")
+
+    # Step 9: Download episodes (sequential - Playwright doesn't support parallel)
+    success = 0
+    failed = 0
+    total = len(episode_data)
+
+    console.print(f"\n[bold cyan]Downloading {total} episodes...[/bold cyan]")
+
+    for i, ep_info in enumerate(episode_data, 1):
+        ep_num = ep_info["num"]
+        source = ep_info["source"]
+
+        console.print(f"\n[bold cyan]── Episode {ep_num} ({i}/{total}) ──[/bold cyan]")
+
         result = dl.download(
             pahewin_url=source.url,
             anime_name=anime_name,

@@ -15,8 +15,7 @@ Key differences from your original:
 import json
 import logging
 import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import quote
 
@@ -30,7 +29,7 @@ logger = logging.getLogger(__name__)
 MIRRORS = [
     "https://animepahe.si",
     "https://animepahe.com",
-    "https://animepahe.ru",
+    # "https://animepahe.ru",
     "https://animepahe.org",
 ]
 
