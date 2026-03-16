@@ -306,6 +306,10 @@ class TestGetVideoUrl:
 
 
 class TestDownloadFile:
+    @pytest.fixture(autouse=True)
+    def _use_tmp_config(self, tmp_config_dir):
+        """Isolate from the real user config (which may have download_backend=aria2c)."""
+
     def test_success(self, tmp_path):
         dl = Downloader(str(tmp_path))
         chunks = [b"chunk1", b"chunk2", b"chunk3"]

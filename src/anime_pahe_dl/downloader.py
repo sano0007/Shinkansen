@@ -36,6 +36,167 @@ from urllib3.util.retry import Retry
 logger = logging.getLogger(__name__)
 
 
+# ── Download backends ────────────────────────────────────────────────────────
+# Each backend has the signature:
+#   (video_url, headers, output_path, episode_label) -> Optional[str]
+# Add a new entry to _BACKENDS to support additional download tools.
+
+def _download_requests(
+        video_url: str,
+        headers: dict,
+        output_path: Path,
+        episode_label: str = "",
+) -> Optional[str]:
+    """Built-in requests-based downloader with resume and progress bar."""
+    headers = dict(headers)  # don't mutate the caller's dict
+
+    existing_size = output_path.stat().st_size if output_path.exists() else 0
+    if existing_size > 0:
+        headers["Range"] = f"bytes={existing_size}-"
+        logger.info(f"Resuming from {existing_size} bytes")
+
+    session = _setup_session()
+
+    for attempt in range(1, 4):
+        try:
+            resp = session.get(video_url, headers=headers, stream=True, timeout=30)
+
+            if resp.status_code == 416:
+                logger.info("File already complete")
+                return str(output_path)
+
+            if resp.status_code not in (200, 206):
+                logger.error(f"Download HTTP {resp.status_code}")
+                return None
+
+            total = int(resp.headers.get("content-length", 0)) + existing_size
+            mode = "ab" if existing_size else "wb"
+
+            with open(output_path, mode) as f, tqdm.tqdm(
+                    total=total,
+                    initial=existing_size,
+                    unit="B",
+                    unit_scale=True,
+                    desc=episode_label or output_path.name,
+                    ncols=80,
+                    unit_divisor=1024,
+            ) as bar:
+                for chunk in resp.iter_content(chunk_size=1024 * 256):
+                    if chunk:
+                        f.write(chunk)
+                        bar.update(len(chunk))
+
+            return str(output_path)
+
+        except Exception as e:
+            logger.warning(f"Download attempt {attempt}/3 failed: {e}")
+            if attempt < 3:
+                time.sleep(3)
+
+    return None
+
+
+def _download_aria2c(
+        video_url: str,
+        headers: dict,
+        output_path: Path,
+        episode_label: str = "",
+) -> Optional[str]:
+    """aria2c-based downloader — multi-connection, fast, built-in resume.
+
+    Suppresses aria2c's own output and shows a tqdm progress bar instead
+    by polling the output file size while the subprocess runs.
+    """
+    import shutil
+    import subprocess
+
+    from anime_pahe_dl.config import get_config as _cfg
+    aria2c_bin = _cfg("aria2c_path", "aria2c")
+    if not shutil.which(aria2c_bin):
+        logger.warning(
+            f"aria2c not found at '{aria2c_bin}'. "
+            "Falling back to requests. Install aria2c or set aria2c_path config."
+        )
+        return _download_requests(video_url, headers, output_path, episode_label)
+
+    connections = int(_cfg("aria2c_connections", 16))
+
+    # Get total file size via HEAD for the progress bar (best-effort)
+    total_size = 0
+    try:
+        session = _setup_session()
+        head = session.head(video_url, headers=headers, timeout=10, allow_redirects=True)
+        total_size = int(head.headers.get("content-length", 0))
+    except Exception:
+        pass
+
+    existing_size = output_path.stat().st_size if output_path.exists() else 0
+
+    cmd = [
+        aria2c_bin,
+        "--quiet",  # suppress aria2c's own output
+        f"--user-agent={headers.get('User-Agent', '')}",
+        f"--header=Referer: {headers.get('Referer', '')}",
+        f"--dir={output_path.parent}",
+        f"--out={output_path.name}",
+        "--continue=true",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--file-allocation=none",  # skip pre-allocation delay
+        f"--split={connections}",
+        f"--max-connection-per-server={connections}",
+        "--min-split-size=1M",
+        video_url,
+    ]
+    logger.info(f"aria2c: {output_path.name} ({connections} connections)")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        with tqdm.tqdm(
+                total=total_size or None,
+                initial=existing_size,
+                unit="B",
+                unit_scale=True,
+                desc=episode_label or output_path.name,
+                ncols=80,
+                unit_divisor=1024,
+        ) as bar:
+            last = existing_size
+            while proc.poll() is None:
+                try:
+                    current = output_path.stat().st_size if output_path.exists() else last
+                except OSError:
+                    current = last
+                bar.update(current - last)
+                last = current
+                time.sleep(0.5)
+            # Final update after process exits
+            try:
+                current = output_path.stat().st_size if output_path.exists() else last
+                bar.update(current - last)
+            except OSError:
+                pass
+
+        if proc.returncode == 0 and output_path.exists():
+            return str(output_path)
+        logger.error(f"aria2c exited with code {proc.returncode}")
+        return None
+    except Exception as e:
+        logger.error(f"aria2c failed: {e}")
+        return None
+
+
+# Registry mapping config value → backend function.
+# To add a new backend: define a function with the same signature and add it here.
+_BACKENDS: dict = {
+    "requests": _download_requests,
+    "aria2c": _download_aria2c,
+}
+
+
 @dataclass
 class PreparedDownload:
     """Pre-resolved download info ready for file download.
@@ -345,63 +506,21 @@ class Downloader:
         episode_label: str = "",
         output_dir: Optional[Path] = None,
     ) -> Optional[str]:
-        """
-        Download a video file with progress bar and resume support.
-
-        Uses requests (not Playwright) for speed and resume capability.
-        """
+        """Dispatch to the configured download backend."""
         if output_dir is None:
             output_dir = self.output_dir
         output_path = output_dir / filename
 
-        # Handle existing partial files (resume)
-        existing_size = output_path.stat().st_size if output_path.exists() else 0
-        if existing_size > 0:
-            headers["Range"] = f"bytes={existing_size}-"
-            logger.info(f"Resuming from {existing_size} bytes")
-
-        session = _setup_session()
-
-        for attempt in range(1, 4):
-            try:
-                resp = session.get(
-                    video_url, headers=headers, stream=True, timeout=30
-                )
-
-                if resp.status_code == 416:
-                    # Range not satisfiable — file is already complete
-                    logger.info("File already complete")
-                    return str(output_path)
-
-                if resp.status_code not in (200, 206):
-                    logger.error(f"Download HTTP {resp.status_code}")
-                    return None
-
-                total = int(resp.headers.get("content-length", 0)) + existing_size
-                mode = "ab" if existing_size else "wb"
-
-                with open(output_path, mode) as f, tqdm.tqdm(
-                    total=total,
-                    initial=existing_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=episode_label or filename,
-                    ncols=80,
-                    unit_divisor=1024,
-                ) as bar:
-                    for chunk in resp.iter_content(chunk_size=1024 * 256):
-                        if chunk:
-                            f.write(chunk)
-                            bar.update(len(chunk))
-
-                return str(output_path)
-
-            except Exception as e:
-                logger.warning(f"Download attempt {attempt}/3 failed: {e}")
-                if attempt < 3:
-                    time.sleep(3)
-
-        return None
+        from anime_pahe_dl.config import get_config as _get_config
+        backend_name = _get_config("download_backend", "requests")
+        backend_fn = _BACKENDS.get(backend_name)
+        if backend_fn is None:
+            logger.error(
+                f"Unknown download_backend '{backend_name}'. "
+                f"Available: {list(_BACKENDS)}"
+            )
+            return None
+        return backend_fn(video_url, headers, output_path, episode_label)
 
     # ── Public API: full download pipeline ───────────────────────
 

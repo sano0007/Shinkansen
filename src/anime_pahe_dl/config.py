@@ -14,6 +14,9 @@ DEFAULT_CONFIG = {
     "retry_count": 3,
     "create_folder": True,
     "parallel_downloads": 3,
+    "download_backend": "requests",  # "requests" | "aria2c"
+    "aria2c_path": "aria2c",  # path to aria2c binary (or full path)
+    "aria2c_connections": 16,  # segments per file (--split / --max-connection-per-server)
 }
 
 

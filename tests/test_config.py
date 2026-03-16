@@ -115,6 +115,9 @@ class TestDefaultConfig:
             "retry_count",
             "create_folder",
             "parallel_downloads",
+            "download_backend",
+            "aria2c_path",
+            "aria2c_connections",
         }
         assert set(DEFAULT_CONFIG.keys()) == expected_keys
 

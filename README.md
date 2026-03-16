@@ -105,6 +105,9 @@ Settings are stored at `~/.anime-dl/config.json`:
 | `retry_count`        | `3`         | Number of retry attempts                             |
 | `create_folder`      | `true`      | Create per-anime subfolders                          |
 | `parallel_downloads` | `3`         | Number of episodes to prefetch/download concurrently |
+| `download_backend`   | `requests`  | Download engine: `requests` or `aria2c`              |
+| `aria2c_path`        | `aria2c`    | Path to aria2c binary (if not in `$PATH`)            |
+| `aria2c_connections` | `16`        | Segments per file for aria2c (`--split`)             |
 
 ## Testing
 

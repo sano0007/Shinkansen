@@ -30,9 +30,13 @@ import json
 import logging
 import sys
 import threading
+import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+# Suppress urllib3's LibreSSL warning (macOS system Python) — not actionable by the user
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 import click
 from rich.console import Console
@@ -45,6 +49,39 @@ from anime_pahe_dl.config import load_config, set_config, get_config, DEFAULT_CO
 from anime_pahe_dl.downloader import Downloader, PreparedDownload, safe_filename
 
 console = Console()
+
+
+def _check_aria2c(prompt_install: bool = False) -> bool:
+    """Return True if aria2c binary is available.
+
+    If not found, print a helpful message. When prompt_install=True (used by
+    'config set') ask the user whether to keep the setting anyway.
+    """
+    import shutil
+    from anime_pahe_dl.config import get_config
+    bin_path = get_config("aria2c_path", "aria2c")
+    if shutil.which(bin_path):
+        return True
+
+    console.print(
+        f"\n[bold red]aria2c not found[/bold red] (looked for [cyan]{bin_path}[/cyan])\n"
+        "\nInstall it with:\n"
+        "  [bold]macOS :[/bold]  brew install aria2\n"
+        "  [bold]Ubuntu:[/bold]  sudo apt install aria2\n"
+        "  [bold]Windows:[/bold] winget install aria2  [dim](or scoop install aria2)[/dim]\n"
+        "\nThen run [cyan]anime-dl config set aria2c_path /path/to/aria2c[/cyan] if it's not in PATH."
+    )
+
+    if prompt_install:
+        keep = Confirm.ask(
+            "\n[yellow]Save 'download_backend = aria2c' anyway?[/yellow] "
+            "(downloads will fall back to requests until aria2c is installed)",
+            default=False,
+        )
+        return keep  # caller decides whether to persist
+
+    return False
+
 
 # Shared client instance
 _client: Optional[AnimePaheClient] = None
@@ -347,6 +384,11 @@ def download(session, episode, ep_range, download_all, quality, dub, output, nam
     failed = 0
     total = len(ep_numbers)
 
+    # Warn early if aria2c backend is selected but binary is missing
+    from anime_pahe_dl.config import get_config as _gcfg
+    if _gcfg("download_backend", "requests") == "aria2c":
+        _check_aria2c()
+
     # Share Playwright context between client and downloader
     if client._pw_context:
         dl.set_playwright_context(client._pw_context)
@@ -617,6 +659,11 @@ def get(query, quality, dub, output):
     # Step 8: Parallel prefetch + pipelined download
     dl = get_downloader(output)
 
+    # Warn early if aria2c backend is selected but binary is missing
+    from anime_pahe_dl.config import get_config as _gcfg
+    if _gcfg("download_backend", "requests") == "aria2c":
+        _check_aria2c()
+
     # Ensure client has Playwright context for sources
     if client._pw_context:
         dl.set_playwright_context(client._pw_context)
@@ -783,6 +830,13 @@ def config_set(key, value):
             console.print(f"[red]Value required for {key} (number)[/red]")
             return
         value = int(value)
+
+    # Before saving, validate aria2c availability when switching to that backend
+    if key == "download_backend" and value == "aria2c":
+        keep = _check_aria2c(prompt_install=True)
+        if not keep:
+            console.print("[yellow]Cancelled — download_backend unchanged.[/yellow]")
+            return
 
     set_config(key, value)
     console.print(f"[green]Set {key} = {value}[/green]")
