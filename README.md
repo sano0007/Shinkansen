@@ -56,8 +56,8 @@ anime-dl config set create_folder true
 - **Cloudflare bypass** -- Playwright fallback when Cloudflare blocks HTTP requests
 - **Persistent cookie caching** -- saves Cloudflare session cookies to disk (`~/.anime-dl/cookies.json`) so subsequent
   runs skip the challenge entirely (25-min TTL)
-- **Pipelined downloading** -- prepares the next episode (source fetching + URL resolution) while the current one
-  downloads, overlapping Playwright work with file I/O
+- **Pipelined downloading** -- rolling window of `parallel_downloads` (default 3) concurrent downloads; each episode's
+  download starts the moment it's resolved, overlapping Playwright prep with file I/O
 - **Multiple quality options** -- select 360p, 480p, 720p, 1080p, best, or worst
 - **Sub/Dub preference** -- choose between Japanese audio with subtitles or English dub
 - **Download resume** -- partial downloads are resumed automatically via HTTP Range headers
@@ -97,14 +97,14 @@ CLI (cli.py)
 
 Settings are stored at `~/.anime-dl/config.json`:
 
-| Setting              | Default     | Description                  |
-|----------------------|-------------|------------------------------|
-| `default_quality`    | `best`      | Preferred video quality      |
-| `default_output`     | `downloads` | Output directory             |
-| `auto_retry`         | `true`      | Retry failed downloads       |
-| `retry_count`        | `3`         | Number of retry attempts     |
-| `create_folder`      | `true`      | Create per-anime subfolders  |
-| `parallel_downloads` | `1`         | Number of parallel downloads |
+| Setting              | Default     | Description                                          |
+|----------------------|-------------|------------------------------------------------------|
+| `default_quality`    | `best`      | Preferred video quality                              |
+| `default_output`     | `downloads` | Output directory                                     |
+| `auto_retry`         | `true`      | Retry failed downloads                               |
+| `retry_count`        | `3`         | Number of retry attempts                             |
+| `create_folder`      | `true`      | Create per-anime subfolders                          |
+| `parallel_downloads` | `3`         | Number of episodes to prefetch/download concurrently |
 
 ## Testing
 

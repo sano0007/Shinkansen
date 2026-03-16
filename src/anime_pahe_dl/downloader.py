@@ -446,6 +446,44 @@ class Downloader:
             kwik_url=kwik_url,
         )
 
+    def prepare_batch(
+            self,
+            episodes: list[tuple[int, str]],
+            max_workers: int = 3,
+    ) -> dict[int, Optional[PreparedDownload]]:
+        """Resolve multiple pahe.win URLs in parallel using concurrent browser tabs.
+
+        Runs up to max_workers Playwright page chains simultaneously.
+        Each chain is independent: pahe.win → kwik.cx → direct .mp4 URL.
+
+        Args:
+            episodes: List of (episode_number, pahewin_url) tuples.
+            max_workers: Max concurrent Playwright page chains.
+
+        Returns:
+            {episode_number: PreparedDownload or None}
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Ensure Playwright is initialized on the calling thread before spawning workers
+        self._ensure_playwright()
+
+        results: dict[int, Optional[PreparedDownload]] = {}
+
+        def _prep_one(ep_num: int, url: str) -> tuple[int, Optional[PreparedDownload]]:
+            return ep_num, self.prepare(url)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_prep_one, ep_num, url): ep_num
+                for ep_num, url in episodes
+            }
+            for future in as_completed(futures):
+                ep_num, prepared = future.result()
+                results[ep_num] = prepared
+
+        return results
+
     def download_prepared(
             self,
             prepared: PreparedDownload,

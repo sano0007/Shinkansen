@@ -472,6 +472,46 @@ class AnimePaheClient:
             return eps[idx].get("session")
         return None
 
+    def get_sources_batch(
+            self,
+            anime_session: str,
+            episode_sessions: list[tuple[int, str]],
+            max_workers: int = 3,
+    ) -> dict[int, list["Source"]]:
+        """Fetch sources for multiple episodes in parallel using concurrent browser tabs.
+
+        Opens up to max_workers Playwright pages simultaneously within the shared
+        browser context. Each tab navigates independently and shares CF cookies.
+
+        Args:
+            anime_session: The anime session ID.
+            episode_sessions: List of (episode_number, episode_session) tuples.
+            max_workers: Max concurrent Playwright pages.
+
+        Returns:
+            {episode_number: [Source, ...]}
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Ensure Playwright is initialized on the calling thread before spawning workers
+        self._ensure_playwright()
+
+        results: dict[int, list[Source]] = {}
+
+        def _fetch_one(ep_num: int, ep_session: str) -> tuple[int, list[Source]]:
+            return ep_num, self.get_sources(anime_session, ep_session)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_fetch_one, ep_num, ep_session): ep_num
+                for ep_num, ep_session in episode_sessions
+            }
+            for future in as_completed(futures):
+                ep_num, sources = future.result()
+                results[ep_num] = sources
+
+        return results
+
     def get_sources(self, anime_session: str, episode_session: str) -> list[Source]:
         """
         Get download sources for an episode.
