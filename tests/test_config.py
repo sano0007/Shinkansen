@@ -118,6 +118,8 @@ class TestDefaultConfig:
             "download_backend",
             "aria2c_path",
             "aria2c_connections",
+            "prepare_workers",
+            "max_downloads",
         }
         assert set(DEFAULT_CONFIG.keys()) == expected_keys
 

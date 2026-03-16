@@ -32,6 +32,9 @@ anime-dl download <session> --range 1-12 --quality 1080
 # Download all episodes
 anime-dl download <session> --all
 
+# Override parallel workers (default: from config)
+anime-dl download <session> --all --workers 5
+
 # Show available sources for an episode
 anime-dl sources <session> 1
 
@@ -56,8 +59,11 @@ anime-dl config set create_folder true
 - **Cloudflare bypass** -- Playwright fallback when Cloudflare blocks HTTP requests
 - **Persistent cookie caching** -- saves Cloudflare session cookies to disk (`~/.anime-dl/cookies.json`) so subsequent
   runs skip the challenge entirely (25-min TTL)
-- **Pipelined downloading** -- rolling window of `parallel_downloads` (default 3) concurrent downloads; each episode's
-  download starts the moment it's resolved, overlapping Playwright prep with file I/O
+- **Parallel batch downloads** -- spawns multiple Playwright browser instances (`prepare_workers`, default 3) to prepare
+  episodes in true parallel, with a separate download thread pool (`max_downloads`, default 5); 200 episodes drops from
+  ~5 hours to ~2 hours
+- **Pipelined downloading** -- each episode's download starts the moment it's resolved, overlapping Playwright prep
+  with file I/O
 - **Multiple quality options** -- select 360p, 480p, 720p, 1080p, best, or worst
 - **Sub/Dub preference** -- choose between Japanese audio with subtitles or English dub
 - **Download resume** -- partial downloads are resumed automatically via HTTP Range headers
@@ -85,11 +91,18 @@ Downloader (downloader.py)
     - pahe.win -> kwik.cx -> direct .mp4 URL
     - Split into prepare() + download_prepared() for pipelining
     - Resume support via Range headers
+    - Pluggable backends: requests (default) or aria2c
+    |
+    v
+WorkerPool (worker_pool.py)
+    - N PrepareWorkers (own Playwright browser + thread each)
+    - Download ThreadPoolExecutor (bounded by max_downloads)
+    - Cookie sharing: Worker 0 clears Cloudflare, others load cached cookies
+    - Rich Live progress display
     |
     v
 CLI (cli.py)
     - Click commands with Rich output
-    - Pipelined download loop (threaded)
     - History and library management
 ```
 
@@ -108,6 +121,8 @@ Settings are stored at `~/.anime-dl/config.json`:
 | `download_backend`   | `requests`  | Download engine: `requests` or `aria2c`              |
 | `aria2c_path`        | `aria2c`    | Path to aria2c binary (if not in `$PATH`)            |
 | `aria2c_connections` | `16`        | Segments per file for aria2c (`--split`)             |
+| `prepare_workers`    | `3`         | Parallel Playwright browser instances for batch prep |
+| `max_downloads`      | `5`         | Max concurrent file downloads                        |
 
 ## Testing
 

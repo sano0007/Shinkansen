@@ -17,6 +17,8 @@ DEFAULT_CONFIG = {
     "download_backend": "requests",  # "requests" | "aria2c"
     "aria2c_path": "aria2c",  # path to aria2c binary (or full path)
     "aria2c_connections": 16,  # segments per file (--split / --max-connection-per-server)
+    "prepare_workers": 3,  # parallel Playwright instances for episode preparation
+    "max_downloads": 5,  # max concurrent file downloads
 }
 
 

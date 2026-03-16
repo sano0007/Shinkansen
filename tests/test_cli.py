@@ -252,14 +252,17 @@ class TestCliDownload:
             episodes=[Episode(number=1, session="e1")],
             sources=[Source(url="https://pahe.win/a", quality="720p", audio="jpn")],
         )
+        mock_pool = MagicMock()
+        mock_pool.run.return_value = (1, 0)
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
-            with patch("anime_pahe_dl.cli.get_downloader", return_value=_make_mock_downloader()):
+            with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
                 result = runner.invoke(cli, [
                     "download", "test_session", "--episode", "1", "--name", "TestAnime"
                 ])
 
         assert result.exit_code == 0
+        mock_pool.run.assert_called_once()
 
     def test_range(self, tmp_config_dir):
         runner = CliRunner()
@@ -267,14 +270,17 @@ class TestCliDownload:
             episodes=[Episode(number=i, session=f"e{i}") for i in range(1, 4)],
             sources=[Source(url="https://pahe.win/a", quality="720p", audio="jpn")],
         )
+        mock_pool = MagicMock()
+        mock_pool.run.return_value = (3, 0)
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
-            with patch("anime_pahe_dl.cli.get_downloader", return_value=_make_mock_downloader()):
+            with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
                 result = runner.invoke(cli, [
                     "download", "test_session", "--range", "1-3", "--name", "TestAnime"
                 ])
 
         assert result.exit_code == 0
+        mock_pool.run.assert_called_once()
 
 
 class TestCliConfig:

@@ -46,6 +46,7 @@ def _download_requests(
         headers: dict,
         output_path: Path,
         episode_label: str = "",
+        quiet: bool = False,
 ) -> Optional[str]:
     """Built-in requests-based downloader with resume and progress bar."""
     headers = dict(headers)  # don't mutate the caller's dict
@@ -80,6 +81,7 @@ def _download_requests(
                     desc=episode_label or output_path.name,
                     ncols=80,
                     unit_divisor=1024,
+                    disable=quiet,
             ) as bar:
                 for chunk in resp.iter_content(chunk_size=1024 * 256):
                     if chunk:
@@ -101,6 +103,7 @@ def _download_aria2c(
         headers: dict,
         output_path: Path,
         episode_label: str = "",
+        quiet: bool = False,
 ) -> Optional[str]:
     """aria2c-based downloader — multi-connection, fast, built-in resume.
 
@@ -117,7 +120,7 @@ def _download_aria2c(
             f"aria2c not found at '{aria2c_bin}'. "
             "Falling back to requests. Install aria2c or set aria2c_path config."
         )
-        return _download_requests(video_url, headers, output_path, episode_label)
+        return _download_requests(video_url, headers, output_path, episode_label, quiet=quiet)
 
     connections = int(_cfg("aria2c_connections", 16))
 
@@ -163,6 +166,7 @@ def _download_aria2c(
                 desc=episode_label or output_path.name,
                 ncols=80,
                 unit_divisor=1024,
+                disable=quiet,
         ) as bar:
             last = existing_size
             while proc.poll() is None:
@@ -505,6 +509,7 @@ class Downloader:
         filename: str,
         episode_label: str = "",
         output_dir: Optional[Path] = None,
+            quiet: bool = False,
     ) -> Optional[str]:
         """Dispatch to the configured download backend."""
         if output_dir is None:
@@ -520,7 +525,7 @@ class Downloader:
                 f"Available: {list(_BACKENDS)}"
             )
             return None
-        return backend_fn(video_url, headers, output_path, episode_label)
+        return backend_fn(video_url, headers, output_path, episode_label, quiet=quiet)
 
     # ── Public API: full download pipeline ───────────────────────
 
@@ -609,12 +614,17 @@ class Downloader:
             anime_name: str = "Anime",
             episode: int = 1,
             quality: str = "720p",
+            quiet: bool = False,
     ) -> Optional[str]:
         """Download a pre-prepared video file (no Playwright needed).
 
         This only uses requests for the actual file download, so it can
         safely run in a background thread while Playwright prepares the
         next episode on the main thread.
+
+        Args:
+            quiet: Suppress tqdm progress bars (used by WorkerPool which
+                   has its own Rich Live progress display).
         """
         filename = safe_filename(anime_name, episode, quality)
 
@@ -631,7 +641,7 @@ class Downloader:
 
         return self._download_file(
             prepared.video_url, prepared.headers, filename,
-            f"Ep {episode}", output_dir,
+            f"Ep {episode}", output_dir, quiet=quiet,
         )
 
     def download(
