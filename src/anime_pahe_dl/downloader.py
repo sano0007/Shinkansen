@@ -21,9 +21,9 @@ Key learnings from autopahe:
 """
 
 import logging
-import os
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -34,6 +34,18 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PreparedDownload:
+    """Pre-resolved download info ready for file download.
+
+    Contains the direct video URL and headers extracted via Playwright,
+    so the actual download only needs requests (no browser).
+    """
+    video_url: str
+    headers: dict
+    kwik_url: str  # For logging/debugging
 
 
 def _setup_session() -> requests.Session:
@@ -393,24 +405,17 @@ class Downloader:
 
     # ── Public API: full download pipeline ───────────────────────
 
-    def download(
-        self,
-        pahewin_url: str,
-        anime_name: str = "Anime",
-        episode: int = 1,
-        quality: str = "720p",
-    ) -> Optional[str]:
-        """
-        Full download pipeline: pahe.win → kwik.cx → .mp4
+    def prepare(self, pahewin_url: str) -> Optional[PreparedDownload]:
+        """Resolve pahe.win → kwik.cx → direct video URL (Playwright-heavy).
 
-        Args:
-            pahewin_url: URL from AnimePahe quality dropdown (pahe.win/xxxxx)
-            anime_name: Name of the anime (for filename)
-            episode: Episode number
-            quality: Quality string (e.g., "1080p")
+        This does all the browser automation work upfront:
+        1. Resolve pahe.win redirect to kwik.cx/f/ URL
+        2. Extract CSRF token from kwik page
+        3. POST to get direct .mp4 video URL
 
-        Returns:
-            Path to downloaded file, or None on failure
+        Returns a PreparedDownload that can be passed to download_prepared()
+        which only needs requests (no Playwright), making it safe to run
+        in a background thread while Playwright prepares the next episode.
         """
         # Step 1: Resolve pahe.win redirect
         if "pahe.win" in pahewin_url:
@@ -435,17 +440,31 @@ class Downloader:
             return None
 
         video_url, dl_headers = result
+        return PreparedDownload(
+            video_url=video_url,
+            headers=dl_headers,
+            kwik_url=kwik_url,
+        )
 
-        # Step 4: Download the file
+    def download_prepared(
+            self,
+            prepared: PreparedDownload,
+            anime_name: str = "Anime",
+            episode: int = 1,
+            quality: str = "720p",
+    ) -> Optional[str]:
+        """Download a pre-prepared video file (no Playwright needed).
+
+        This only uses requests for the actual file download, so it can
+        safely run in a background thread while Playwright prepares the
+        next episode on the main thread.
+        """
         filename = safe_filename(anime_name, episode, quality)
 
-        # Check config for folder creation
         from anime_pahe_dl.config import get_config
         create_folder = get_config("create_folder", True)
 
-        # Determine output directory
         if create_folder:
-            # Create anime-specific subfolder
             anime_folder = re.sub(r"[^0-9A-Za-z]+", "_", anime_name).strip("_")
             anime_folder = re.sub(r"_+", "_", anime_folder) or "Anime"
             output_dir = self.output_dir / anime_folder
@@ -454,8 +473,25 @@ class Downloader:
             output_dir = self.output_dir
 
         return self._download_file(
-            video_url, dl_headers, filename, f"Ep {episode}", output_dir
+            prepared.video_url, prepared.headers, filename,
+            f"Ep {episode}", output_dir,
         )
+
+    def download(
+            self,
+            pahewin_url: str,
+            anime_name: str = "Anime",
+            episode: int = 1,
+            quality: str = "720p",
+    ) -> Optional[str]:
+        """Full download pipeline: pahe.win → kwik.cx → .mp4
+
+        Convenience method that calls prepare() + download_prepared().
+        """
+        prepared = self.prepare(pahewin_url)
+        if not prepared:
+            return None
+        return self.download_prepared(prepared, anime_name, episode, quality)
 
     def close(self):
         """Clean up Playwright resources (only if we created them)."""

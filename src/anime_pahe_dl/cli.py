@@ -29,6 +29,7 @@ import atexit
 import json
 import logging
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -41,7 +42,7 @@ from rich.table import Table
 
 from anime_pahe_dl.client import AnimePaheClient, Source
 from anime_pahe_dl.config import load_config, set_config, DEFAULT_CONFIG
-from anime_pahe_dl.downloader import Downloader, safe_filename
+from anime_pahe_dl.downloader import Downloader, PreparedDownload, safe_filename
 
 console = Console()
 
@@ -312,13 +313,17 @@ def download(session, episode, ep_range, download_all, quality, dub, output, nam
     dl = get_downloader(output)
 
     # Determine which episodes to download
+    # Fetch all episodes upfront for the session map (avoids per-episode API calls)
+    with console.status("[bold cyan]Fetching episode list...", spinner="dots"):
+        eps = client.get_episodes(session)
+
+    ep_session_map = {ep.number: ep.session for ep in eps}
+
     if episode:
         ep_numbers = [episode]
     elif ep_range:
         ep_numbers = parse_range(ep_range)
     elif download_all:
-        with console.status("[bold cyan]Fetching episode list...", spinner="dots"):
-            eps = client.get_episodes(session)
         ep_numbers = [ep.number for ep in eps]
         console.print(f"[bold]Will download {len(ep_numbers)} episodes[/bold]")
     else:
@@ -333,71 +338,111 @@ def download(session, episode, ep_range, download_all, quality, dub, output, nam
             f"Episodes: {ep_numbers[0]}-{ep_numbers[-1]} ({len(ep_numbers)} total)\n"
             f"Quality: {quality} | Audio: {'Dub' if dub else 'Sub'}\n"
             f"Output: {output}/",
-            title="📥 Download Plan",
+            title="Download Plan",
             border_style="cyan",
         )
     )
 
     success = 0
     failed = 0
+    total = len(ep_numbers)
 
-    for ep_num in ep_numbers:
-        console.print(f"\n[bold cyan]── Episode {ep_num} ──[/bold cyan]")
+    # Share Playwright context between client and downloader
+    if client._pw_context:
+        dl.set_playwright_context(client._pw_context)
+
+    def _prepare_episode(ep_num: int) -> Optional[tuple[Source, PreparedDownload]]:
+        """Fetch sources and resolve download URL for an episode."""
+        ep_session = ep_session_map.get(ep_num)
+        if not ep_session:
+            console.print(f"  [red]Episode {ep_num} not found[/red]")
+            return None
+
+        srcs = client.get_sources(session, ep_session)
+        # Share context after get_sources initializes Playwright
+        if client._pw_context:
+            dl.set_playwright_context(client._pw_context)
+
+        if not srcs:
+            console.print(f"  [red]No sources for episode {ep_num}[/red]")
+            return None
+
+        source = select_source(srcs, quality, dub)
+        if not source:
+            console.print(f"  [red]No matching source for episode {ep_num}[/red]")
+            return None
+
+        prepared = dl.prepare(source.url)
+        if not prepared:
+            console.print(f"  [red]Failed to resolve download for episode {ep_num}[/red]")
+            return None
+
+        return source, prepared
+
+    # Pipelined download: prepare next while current downloads
+    active_thread: Optional[threading.Thread] = None
+    download_result: list = [None]
+    next_ready: Optional[tuple[int, Source, PreparedDownload]] = None
+
+    for i, ep_num in enumerate(ep_numbers, 1):
+        console.print(f"\n[bold cyan]── Episode {ep_num} ({i}/{total}) ──[/bold cyan]")
 
         # Check if already downloaded
         expected_file = safe_filename(anime_name, ep_num, quality)
         if (Path(output) / expected_file).exists():
             console.print(f"  [yellow]Already exists, skipping: {expected_file}[/yellow]")
             success += 1
+            next_ready = None  # Don't use stale pre-prepared data
             continue
 
-        # Get episode session
-        with console.status("  Getting episode info...", spinner="dots"):
-            ep_session = client.get_episode_session(session, ep_num)
+        # Use pre-prepared data if available
+        if next_ready and next_ready[0] == ep_num:
+            source, prepared = next_ready[1], next_ready[2]
+            next_ready = None
+            audio_label = "Dub" if source.is_dub else "Sub"
+            console.print(
+                f"  [green]Pre-prepared:[/green] {source.quality} {audio_label} ({source.fansub}) {source.size}")
+        else:
+            console.print(f"  [dim]Fetching sources & resolving download...[/dim]")
+            result = _prepare_episode(ep_num)
+            if not result:
+                failed += 1
+                continue
+            source, prepared = result
+            audio_label = "Dub" if source.is_dub else "Sub"
+            console.print(f"  [green]Ready:[/green] {source.quality} {audio_label} ({source.fansub}) {source.size}")
 
-        if not ep_session:
-            console.print(f"  [red]Episode {ep_num} not found[/red]")
-            failed += 1
-            continue
+        # Download in background thread
+        ep_quality = source.quality.replace("p", "")
+        download_result[0] = None
 
-        # Get sources
-        with console.status("  Getting sources...", spinner="dots"):
-            srcs = client.get_sources(session, ep_session)
+        def _do_download(prep=prepared, aname=anime_name, ep=ep_num, q=ep_quality):
+            download_result[0] = dl.download_prepared(prep, aname, ep, q)
 
-        # After get_sources, the client has a Playwright context with
-        # Cloudflare cookies. Share it with the downloader so it doesn't
-        # try to create its own (which would cause event loop conflicts).
-        if client._pw_context:
-            dl.set_playwright_context(client._pw_context)
+        active_thread = threading.Thread(target=_do_download)
+        active_thread.start()
 
-        if not srcs:
-            console.print(f"  [red]No sources for episode {ep_num}[/red]")
-            failed += 1
-            continue
+        # Prepare next episode while current downloads
+        has_next = i < total
+        if has_next:
+            next_ep = ep_numbers[i]
+            # Don't pre-prepare if it already exists
+            next_expected = safe_filename(anime_name, next_ep, quality)
+            if not (Path(output) / next_expected).exists():
+                console.print(f"  [dim]Preparing episode {next_ep} in background...[/dim]")
+                next_result = _prepare_episode(next_ep)
+                if next_result:
+                    next_ready = (next_ep, next_result[0], next_result[1])
+                    console.print(f"  [dim]Episode {next_ep} ready[/dim]")
+                else:
+                    next_ready = None
 
-        # Select best source
-        source = select_source(srcs, quality, dub)
-        if not source:
-            console.print(f"  [red]No matching source[/red]")
-            failed += 1
-            continue
+        # Wait for current download
+        active_thread.join()
+        active_thread = None
 
-        audio_label = "Dub" if source.is_dub else "Sub"
-        console.print(
-            f"  [green]Selected:[/green] {source.quality} {audio_label} "
-            f"({source.fansub}) {source.size}"
-        )
-
-        # Download
-        result = dl.download(
-            pahewin_url=source.url,
-            anime_name=anime_name,
-            episode=ep_num,
-            quality=source.quality.replace("p", ""),
-        )
-
-        if result:
-            console.print(f"  [green]✓ Saved to: {result}[/green]")
+        if download_result[0]:
+            console.print(f"  [green]✓ Saved to: {download_result[0]}[/green]")
             success += 1
         else:
             console.print(f"  [red]✗ Download failed[/red]")
@@ -511,6 +556,9 @@ def get(query, quality, dub, output):
 
     console.print(f"[bold]Found {len(eps)} episodes[/bold]")
 
+    # Create episode lookup (episode number -> session) to avoid extra API calls
+    ep_session_map = {ep.number: ep.session for ep in eps}
+
     # Step 4: Select episodes
     ep_choices = Prompt.ask(
         "\n[bold]Episodes to download[/bold] (e.g., 1-5, 1,3,5 or 'all')",
@@ -551,67 +599,104 @@ def get(query, quality, dub, output):
         console.print("[yellow]Cancelled.[/yellow]")
         return
 
-    # Step 8: Pre-fetch sources for all episodes
-    console.print(f"\n[bold cyan]Preparing episodes...[/bold cyan]")
+    # Step 8: Pipelined download — prepare next episode while current downloads
     dl = get_downloader(output)
 
     # Ensure client has Playwright context for sources
     if client._pw_context:
         dl.set_playwright_context(client._pw_context)
 
-    # Pre-fetch all sources
-    episode_data = []
-    for i, ep_num in enumerate(ep_numbers, 1):
-        console.print(f"  Preparing episode {i}/{len(ep_numbers)}...", end="\r")
-
-        # Get episode session
-        ep_session = client.get_episode_session(session, ep_num)
-        if not ep_session:
-            continue
-
-        # Get sources
-        srcs = client.get_sources(session, ep_session)
-        if not srcs:
-            continue
-
-        # Select source
-        source = select_source(srcs, quality, prefer_dub)
-        if not source:
-            continue
-
-        episode_data.append({
-            "num": ep_num,
-            "source": source,
-        })
-
-    console.print(f"  Prepared {len(episode_data)} episodes              ")
-
-    # Step 9: Download episodes (sequential - Playwright doesn't support parallel)
     success = 0
     failed = 0
-    total = len(episode_data)
+    total = len(ep_numbers)
 
     console.print(f"\n[bold cyan]Downloading {total} episodes...[/bold cyan]")
 
-    for i, ep_info in enumerate(episode_data, 1):
-        ep_num = ep_info["num"]
-        source = ep_info["source"]
+    def _prepare_episode(ep_num: int) -> Optional[tuple[Source, PreparedDownload]]:
+        """Fetch sources and resolve download URL for an episode (uses Playwright)."""
+        ep_session = ep_session_map.get(ep_num)
+        if not ep_session:
+            console.print(f"  [red]Episode {ep_num} not found[/red]")
+            return None
 
+        srcs = client.get_sources(session, ep_session)
+        if not srcs:
+            console.print(f"  [red]No sources for episode {ep_num}[/red]")
+            return None
+
+        source = select_source(srcs, quality, prefer_dub)
+        if not source:
+            console.print(f"  [red]No matching source for episode {ep_num}[/red]")
+            return None
+
+        prepared = dl.prepare(source.url)
+        if not prepared:
+            console.print(f"  [red]Failed to resolve download for episode {ep_num}[/red]")
+            return None
+
+        return source, prepared
+
+    # Track active download thread and its result
+    active_thread: Optional[threading.Thread] = None
+    download_result: list = [None]  # Mutable container for thread result
+
+    # Pre-prepared data for the next episode (prepared while current downloads)
+    next_ready: Optional[tuple[int, Source, PreparedDownload]] = None
+
+    for i, ep_num in enumerate(ep_numbers, 1):
         console.print(f"\n[bold cyan]── Episode {ep_num} ({i}/{total}) ──[/bold cyan]")
 
-        result = dl.download(
-            pahewin_url=source.url,
-            anime_name=anime_name,
-            episode=ep_num,
-            quality=source.quality.replace("p", ""),
-        )
+        # Check if this episode was already pre-prepared while the last one downloaded
+        if next_ready and next_ready[0] == ep_num:
+            source, prepared = next_ready[1], next_ready[2]
+            next_ready = None
+            console.print(
+                f"  [green]Pre-prepared:[/green] {source.quality} {'Dub' if source.is_dub else 'Sub'} ({source.fansub}) {source.size}")
+        else:
+            # Prepare this episode now (first episode, or pre-prepare was skipped/failed)
+            console.print(f"  [dim]Fetching sources & resolving download...[/dim]")
+            result = _prepare_episode(ep_num)
+            if not result:
+                failed += 1
+                continue
+            source, prepared = result
+            console.print(
+                f"  [green]Ready:[/green] {source.quality} {'Dub' if source.is_dub else 'Sub'} ({source.fansub}) {source.size}")
 
-        if result:
-            console.print(f"  [green]✓ Saved:[/green] {result}")
-            add_to_history(anime_name, ep_num, source.quality, result)
+        # Start the file download in a background thread (uses only requests, no Playwright)
+        ep_quality = source.quality.replace("p", "")
+        download_result[0] = None
+
+        def _do_download(prep=prepared, name=anime_name, ep=ep_num, q=ep_quality):
+            download_result[0] = dl.download_prepared(prep, name, ep, q)
+
+        active_thread = threading.Thread(target=_do_download)
+        active_thread.start()
+
+        # While the file downloads, prepare the NEXT episode using Playwright
+        has_next = i < total
+        if has_next:
+            next_ep = ep_numbers[i]
+            next_ep_session = ep_session_map.get(next_ep)
+            if next_ep_session:
+                console.print(f"  [dim]Preparing episode {next_ep} in background...[/dim]")
+                next_result = _prepare_episode(next_ep)
+                if next_result:
+                    next_ready = (next_ep, next_result[0], next_result[1])
+                    console.print(f"  [dim]Episode {next_ep} ready[/dim]")
+                else:
+                    next_ready = None
+
+        # Wait for the current download to finish
+        active_thread.join()
+        active_thread = None
+
+        if download_result[0]:
+            console.print(f"  [green]✓ Saved:[/green] {download_result[0]}")
+            add_to_history(anime_name, ep_num, source.quality, download_result[0])
             success += 1
         else:
-            console.print(f"  [red]✗ Failed[/red]")
+            console.print(f"  [red]✗ Download failed[/red]")
             failed += 1
 
     # Summary
