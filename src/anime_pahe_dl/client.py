@@ -15,7 +15,9 @@ Key differences from your original:
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
@@ -32,6 +34,11 @@ MIRRORS = [
     # "https://animepahe.ru",
     "https://animepahe.org",
 ]
+
+# Persistent cookie cache — avoids Cloudflare challenge on repeat runs
+COOKIE_CACHE_DIR = Path.home() / ".anime-dl"
+COOKIE_CACHE_FILE = COOKIE_CACHE_DIR / "cookies.json"
+COOKIE_MAX_AGE = 25 * 60  # 25 minutes — CF cookies typically last ~30 min
 
 HEADERS = {
     "User-Agent": (
@@ -128,6 +135,87 @@ class AnimePaheClient:
         self._base_url: Optional[str] = None  # Working mirror
         self._cf_cleared = False  # Whether Cloudflare has been cleared
 
+        # Try loading cached cookies — may skip Playwright entirely
+        self._load_cached_cookies()
+
+    # ── Cookie cache ─────────────────────────────────────────────
+
+    def _load_cached_cookies(self):
+        """Load Cloudflare cookies from disk cache into the HTTP session.
+
+        If valid cached cookies exist (not expired), we load them so that
+        the first _api_get() call can succeed without Playwright.
+        """
+        if not COOKIE_CACHE_FILE.exists():
+            return
+
+        try:
+            with open(COOKIE_CACHE_FILE) as f:
+                cache = json.load(f)
+
+            saved_at = cache.get("saved_at", 0)
+            age = time.time() - saved_at
+            if age > COOKIE_MAX_AGE:
+                logger.debug(f"Cookie cache expired ({age:.0f}s old, max {COOKIE_MAX_AGE}s)")
+                return
+
+            cookies = cache.get("cookies", [])
+            base_url = cache.get("base_url")
+
+            if not cookies:
+                return
+
+            for c in cookies:
+                self._http.cookies.set(
+                    c["name"], c["value"],
+                    domain=c.get("domain", ""),
+                    path=c.get("path", "/"),
+                )
+
+            if base_url:
+                self._base_url = base_url
+
+            logger.info(f"Loaded {len(cookies)} cached cookies ({age:.0f}s old)")
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            logger.debug(f"Failed to load cookie cache: {e}")
+
+    def _save_cookies_to_cache(self):
+        """Save current Cloudflare cookies to disk for future runs.
+
+        Called after a successful Cloudflare challenge clear. Saves both
+        the Playwright browser cookies and the working mirror URL.
+        """
+        if not self._pw_context:
+            return
+
+        try:
+            cookies = self._pw_context.cookies()
+            if not cookies:
+                return
+
+            COOKIE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+            cache = {
+                "saved_at": time.time(),
+                "base_url": self._base_url,
+                "cookies": [
+                    {
+                        "name": c["name"],
+                        "value": c["value"],
+                        "domain": c.get("domain", ""),
+                        "path": c.get("path", "/"),
+                    }
+                    for c in cookies
+                ],
+            }
+
+            with open(COOKIE_CACHE_FILE, "w") as f:
+                json.dump(cache, f)
+
+            logger.info(f"Saved {len(cookies)} cookies to cache")
+        except Exception as e:
+            logger.debug(f"Failed to save cookie cache: {e}")
+
     # ── HTTP helpers ──────────────────────────────────────────────
 
     def _api_get(self, params: dict) -> Optional[dict]:
@@ -174,6 +262,7 @@ class AnimePaheClient:
         # so subsequent HTTP calls may work without Playwright
         if result:
             self._transfer_cookies_to_http()
+            self._save_cookies_to_cache()
 
         return result
 
@@ -263,6 +352,9 @@ class AnimePaheClient:
 
             # Transfer cookies to HTTP session
             self._transfer_cookies_to_http()
+
+            # Persist cookies to disk for future runs
+            self._save_cookies_to_cache()
 
         except Exception as e:
             logger.error(f"Cloudflare clearing failed: {e}")
