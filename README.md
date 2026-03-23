@@ -1,20 +1,54 @@
-# anime-pahe-dl
+# 🚅 Shinkansen - Anime Downloader (anime-pahe-dl)
 
-Fast, reliable anime downloader for [AnimePahe](https://animepahe.si).
+> **A blazing-fast, fully interactive terminal application for downloading anime.**
 
-## Installation
+`anime-pahe-dl` is a powerful Terminal User Interface (TUI) that lets you search and batch-download anime directly
+from [AnimePahe](https://animepahe.si).
+It natively bypasses Cloudflare, fetches episodes in true parallel, and features an elegant interactive split-screen
+menu right in your terminal.
+
+---
+
+## 🚀 Quick Start (1-Command Install)
+
+For the absolute easiest setup across Mac/Linux/Windows, install the tool globally in its own isolated environment
+using [pipx](https://pipx.pypa.io/) (the modern standard for Python CLIs):
 
 ```bash
+# Safely install globally and set up the Chromium headless browser in one go!
+pipx install git+https://github.com/sano0007/Shinkansen_Anime_Downloader.git && anime-dl setup
+```
+
+*(Note: Replace `sano0007/Shinkansen_Anime_Downloader` with your actual GitHub repository URL once published!)*
+
+## ⚙️ Manual Installation (For Development)
+
+If you are cloning the repository directly instead of using the 1-command install:
+```bash
+git clone https://github.com/sano0007/Shinkansen_Anime_Downloader.git
+cd anime-pahe-dl
 pip install -e .
 
-# Install Playwright browser (required on first run)
+# Install Playwright browser dependencies (required exactly once)
 anime-dl setup
 ```
 
-## Usage
+## 🎮 Usage
+
+### Interactive Mode (Recommended)
+
+Simply type the root command anywhere in your terminal to launch the pure TUI experience:
+```bash
+anime-dl
+```
+
+This launches a beautiful, dynamically-rendered menu offering Search & Download, Library browsing, History tracking, and
+recursive Settings management—all fully navigable via your arrow keys!
+
+### Advanced Command-Line Execution
 
 ```bash
-# Interactive download (search + select + download in one flow)
+# Interactive download directly from a query
 anime-dl get "naruto"
 
 # Search for anime
@@ -73,7 +107,12 @@ anime-dl config set create_folder true
 - **Anime library** -- browse and search your downloaded collection
 - **Config system** -- persistent settings at `~/.anime-dl/config.json` (default quality, output dir, folder creation,
   etc.)
-- **Rich terminal UI** -- colored output, progress bars, tables, and status spinners
+- **Interactive TUI** -- run `anime-dl` to access a beautiful arrow-key navigable main menu routing your entire
+  application
+- **Automatic Retries** -- any episodes that timeout or fail directly prompt you to instantly retry them at the end of
+  the batch
+- **Rich terminal UI** -- Claude-style split screen welcome banners, colored output, live progress bars, tables, and
+  spinners
 
 ## Architecture
 
@@ -139,6 +178,26 @@ pytest tests/ --cov=anime_pahe_dl --cov-report=term-missing
 # Run a specific test module
 pytest tests/test_config.py -v
 ```
+
+## 🤝 Contributing & New Anime Sources
+
+**We want to grow!** Shinkansen currently supports downloading directly from AnimePahe, but our goal is to build a
+massive ecosystem supporting multiple anime sources.
+
+We highly encourage the open-source community to get involved:
+
+- **Suggest new anime sites** to support by opening an Issue.
+- **Fork the repository** and open Pull Requests implementing new fetchers/extractors.
+- Improve the interactive TUI or squash bugs.
+
+Please read our `CONTRIBUTING.md` guidelines to easily get started. Let's build the ultimate anime CLI together!
+
+## 💖 Support
+
+If you love the blinding speed of Shinkansen and want to say thanks for the hours saved, you can buy me a coffee! It
+goes a long way in keeping the project alive and well-maintained.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/sanoo)
 
 ## Requirements
 

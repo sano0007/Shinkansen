@@ -86,6 +86,7 @@ class ProgressTracker:
         self._spinners: dict[int, Spinner] = {}
         self.completed = 0
         self.failed = 0
+        self.failed_eps: set[int] = set()
         self.skipped = 0
         self._done = threading.Event()
 
@@ -114,9 +115,11 @@ class ProgressTracker:
         with self._lock:
             self.completed += 1
 
-    def add_failed(self):
+    def add_failed(self, ep_num: int = -1):
         with self._lock:
             self.failed += 1
+            if ep_num != -1:
+                self.failed_eps.add(ep_num)
 
     def add_skipped(self):
         with self._lock:
@@ -329,7 +332,7 @@ class WorkerPool:
         self._tracker: Optional[ProgressTracker] = None
         self._original_sigint = None
 
-    def run(self, tasks: list[EpisodeTask]) -> tuple[int, int]:
+    def run(self, tasks: list[EpisodeTask]) -> tuple[int, list[EpisodeTask]]:
         """Run the full prepare+download pipeline.
 
         Returns (success_count, failed_count).
@@ -417,7 +420,8 @@ class WorkerPool:
                 except (ValueError, OSError):
                     pass
 
-        return self._tracker.completed + self._tracker.skipped, self._tracker.failed
+        failed_tasks = [t for t in tasks if t.ep_num in self._tracker.failed_eps]
+        return self._tracker.completed + self._tracker.skipped, failed_tasks
 
     def _download_coordinator(self, num_active: int, anime_name: str, quality: str):
         """Consume prepared results and dispatch downloads."""
@@ -440,7 +444,7 @@ class WorkerPool:
 
                 if result.error:
                     logger.warning(f"Episode {result.ep_num}: {result.error}")
-                    self._tracker.add_failed()
+                    self._tracker.add_failed(result.ep_num)
                     remaining -= 1
                     continue
 
@@ -461,11 +465,11 @@ class WorkerPool:
                             if self._on_complete:
                                 self._on_complete(res.ep_num, res.source.quality, path)
                         else:
-                            self._tracker.add_failed()
+                            self._tracker.add_failed(res.ep_num)
                             self._tracker.clear_download(res.ep_num)
                     except Exception as e:
                         logger.error(f"Download ep {res.ep_num} error: {e}")
-                        self._tracker.add_failed()
+                        self._tracker.add_failed(res.ep_num)
                         self._tracker.clear_download(res.ep_num)
                     remaining -= 1
 
@@ -479,9 +483,9 @@ class WorkerPool:
                         if self._on_complete:
                             self._on_complete(res.ep_num, res.source.quality, path)
                     else:
-                        self._tracker.add_failed()
+                        self._tracker.add_failed(res.ep_num)
                 except Exception:
-                    self._tracker.add_failed()
+                    self._tracker.add_failed(res.ep_num)
                 self._tracker.clear_download(res.ep_num)
                 remaining -= 1
 

@@ -158,18 +158,137 @@ atexit.register(_cleanup)
 # Re-export from utils for backward compatibility and test imports
 from anime_pahe_dl.utils import parse_range, select_source  # noqa: F401, E402
 
+HAS_PRINTED_BANNER = False
+
+
+def _print_banner_once():
+    global HAS_PRINTED_BANNER
+    if not HAS_PRINTED_BANNER:
+        console.print(_render_welcome_banner())
+        HAS_PRINTED_BANNER = True
+
+
+def _handle_interactive_main_menu(ctx):
+    """Show the interactive root menu."""
+    from InquirerPy import inquirer
+    from InquirerPy.base.control import Choice
+
+    _print_banner_once()
+    while True:
+        try:
+            choice = inquirer.select(
+                message="What would you like to do?",
+                choices=[
+                    Choice("search", name="🔍 Search & Download Anime"),
+                    Choice("library", name="📚 View Library"),
+                    Choice("history", name="🕒 View Download History"),
+                    Choice("settings", name="⚙️  Settings"),
+                    Choice("exit", name="❌ Exit"),
+                ],
+                pointer="➜",
+            ).execute()
+        except KeyboardInterrupt:
+            break
+
+        if choice == "search":
+            try:
+                query = inquirer.text(message="Search query:").execute()
+                if query.strip():
+                    ctx.invoke(
+                        get,
+                        query=query.strip(),
+                        quality=None,
+                        dub=None,
+                        output="downloads",
+                        workers=None,
+                    )
+            except KeyboardInterrupt:
+                pass
+        elif choice == "library":
+            ctx.invoke(library)
+            try:
+                inquirer.text(message="Press Enter to return...").execute()
+            except KeyboardInterrupt:
+                pass
+        elif choice == "history":
+            ctx.invoke(history, clear=False)
+            try:
+                inquirer.text(message="Press Enter to return...").execute()
+            except KeyboardInterrupt:
+                pass
+        elif choice == "settings":
+            ctx.invoke(config_show)
+            try:
+                inquirer.text(message="Press Enter to return...").execute()
+            except KeyboardInterrupt:
+                pass
+        elif choice == "exit":
+            break
+
+
+def _run_download_with_retries(pool, tasks, anime_name, output):
+    """Helper to run the pool and recursively prompt for failed episode retries."""
+    total_success = 0
+    current_tasks = tasks
+
+    while current_tasks:
+        success, failed_tasks = pool.run(current_tasks)
+        total_success += success
+
+        if not failed_tasks:
+            break
+
+        from InquirerPy import inquirer
+
+        try:
+            retry = inquirer.confirm(
+                message=f"{len(failed_tasks)} episode(s) failed. Retry them?",
+                default=True,
+            ).execute()
+        except KeyboardInterrupt:
+            retry = False
+
+        if not retry:
+            current_tasks = failed_tasks
+            break
+
+        current_tasks = failed_tasks
+
+    failed_count = len(current_tasks) if current_tasks else 0
+
+    console.print(
+        Panel(
+            f"[bold]Anime:[/bold] {anime_name}\n"
+            f"[bold]Target:[/bold] {output}/\n\n"
+            f"[green]✓ Downloaded: {total_success} episode(s)[/green]\n"
+            + (
+                f"[red]✗ Failed: {failed_count} episode(s)[/red]\n"
+                if failed_count
+                else ""
+            )
+            + "\n[dim]Enjoy watching![/dim]",
+            title="✨ Download Complete ✨",
+            border_style="green" if failed_count == 0 else "yellow",
+            expand=False,
+        )
+    )
+
 
 # ── CLI Commands ─────────────────────────────────────────────────
 
 
-@click.group()
+@click.group(invoke_without_command=True)
+@click.pass_context
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
-def cli(verbose):
+def cli(ctx, verbose):
     """anime-pahe-dl — Fast anime downloader for AnimePahe"""
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
     else:
         logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+
+    if ctx.invoked_subcommand is None:
+        _handle_interactive_main_menu(ctx)
 
 
 @cli.command()
@@ -367,20 +486,7 @@ def download(
         output_dir=output,
         on_complete=lambda ep, q, path: add_to_history(anime_name, ep, q, path),
     )
-    success, failed = pool.run(tasks)
-
-    console.print(
-        Panel(
-            f"[bold]Anime:[/bold] {anime_name}\n"
-            f"[bold]Target:[/bold] {output}/\n\n"
-            f"[green]✓ Downloaded: {success} episode(s)[/green]\n"
-            + (f"[red]✗ Failed: {failed} episode(s)[/red]\n" if failed else "")
-            + "\n[dim]Enjoy watching![/dim]",
-            title="✨ Download Complete ✨",
-            border_style="green" if failed == 0 else "yellow",
-            expand=False,
-        )
-    )
+    _run_download_with_retries(pool, tasks, anime_name, output)
 
 
 @cli.command()
@@ -519,7 +625,7 @@ def get(query, quality, dub, output, workers):
     """Interactive search and download - all in one!"""
     client = get_client()
 
-    console.print(_render_welcome_banner())
+    _print_banner_once()
 
     # Step 1: Search
     with console.status("[bold cyan]Searching...", spinner="dots"):
@@ -648,20 +754,7 @@ def get(query, quality, dub, output, workers):
         output_dir=output,
         on_complete=lambda ep, q, path: add_to_history(anime_name, ep, q, path),
     )
-    success, failed = pool.run(tasks)
-
-    console.print(
-        Panel(
-            f"[bold]Anime:[/bold] {anime_name}\n"
-            f"[bold]Target:[/bold] {output}/\n\n"
-            f"[green]✓ Downloaded: {success} episode(s)[/green]\n"
-            + (f"[red]✗ Failed: {failed} episode(s)[/red]\n" if failed else "")
-            + "\n[dim]Enjoy watching![/dim]",
-            title="✨ Download Complete ✨",
-            border_style="green" if failed == 0 else "yellow",
-            expand=False,
-        )
-    )
+    _run_download_with_retries(pool, tasks, anime_name, output)
 
 
 @cli.group()
