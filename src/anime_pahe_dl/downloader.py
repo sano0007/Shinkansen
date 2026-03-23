@@ -21,9 +21,9 @@ Key learnings from autopahe:
 """
 
 import logging
-import os
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
@@ -34,6 +34,192 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
+
+
+# ── Download backends ────────────────────────────────────────────────────────
+# Each backend has the signature:
+#   (video_url, headers, output_path, episode_label) -> Optional[str]
+# Add a new entry to _BACKENDS to support additional download tools.
+
+
+def _download_requests(
+    video_url: str,
+    headers: dict,
+    output_path: Path,
+    episode_label: str = "",
+    quiet: bool = False,
+) -> Optional[str]:
+    """Built-in requests-based downloader with resume and progress bar."""
+    headers = dict(headers)  # don't mutate the caller's dict
+
+    existing_size = output_path.stat().st_size if output_path.exists() else 0
+    if existing_size > 0:
+        headers["Range"] = f"bytes={existing_size}-"
+        logger.info(f"Resuming from {existing_size} bytes")
+
+    session = _setup_session()
+
+    for attempt in range(1, 4):
+        try:
+            resp = session.get(video_url, headers=headers, stream=True, timeout=30)
+
+            if resp.status_code == 416:
+                logger.info("File already complete")
+                return str(output_path)
+
+            if resp.status_code not in (200, 206):
+                logger.error(f"Download HTTP {resp.status_code}")
+                return None
+
+            total = int(resp.headers.get("content-length", 0)) + existing_size
+            mode = "ab" if existing_size else "wb"
+
+            with open(output_path, mode) as f, tqdm.tqdm(
+                total=total,
+                initial=existing_size,
+                unit="B",
+                unit_scale=True,
+                desc=episode_label or output_path.name,
+                ncols=80,
+                unit_divisor=1024,
+                disable=quiet,
+            ) as bar:
+                for chunk in resp.iter_content(chunk_size=1024 * 256):
+                    if chunk:
+                        f.write(chunk)
+                        bar.update(len(chunk))
+
+            return str(output_path)
+
+        except Exception as e:
+            logger.warning(f"Download attempt {attempt}/3 failed: {e}")
+            if attempt < 3:
+                time.sleep(3)
+
+    return None
+
+
+def _download_aria2c(
+    video_url: str,
+    headers: dict,
+    output_path: Path,
+    episode_label: str = "",
+    quiet: bool = False,
+) -> Optional[str]:
+    """aria2c-based downloader — multi-connection, fast, built-in resume.
+
+    Suppresses aria2c's own output and shows a tqdm progress bar instead
+    by polling the output file size while the subprocess runs.
+    """
+    import shutil
+    import subprocess
+
+    from anime_pahe_dl.config import get_config as _cfg
+
+    aria2c_bin = _cfg("aria2c_path", "aria2c")
+    if not shutil.which(aria2c_bin):
+        logger.warning(
+            f"aria2c not found at '{aria2c_bin}'. "
+            "Falling back to requests. Install aria2c or set aria2c_path config."
+        )
+        return _download_requests(
+            video_url, headers, output_path, episode_label, quiet=quiet
+        )
+
+    connections = int(_cfg("aria2c_connections", 16))
+
+    # Get total file size via HEAD for the progress bar (best-effort)
+    total_size = 0
+    try:
+        session = _setup_session()
+        head = session.head(
+            video_url, headers=headers, timeout=10, allow_redirects=True
+        )
+        total_size = int(head.headers.get("content-length", 0))
+    except Exception:
+        pass
+
+    existing_size = output_path.stat().st_size if output_path.exists() else 0
+
+    cmd = [
+        aria2c_bin,
+        "--quiet",  # suppress aria2c's own output
+        f"--user-agent={headers.get('User-Agent', '')}",
+        f"--header=Referer: {headers.get('Referer', '')}",
+        f"--dir={output_path.parent}",
+        f"--out={output_path.name}",
+        "--continue=true",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--file-allocation=none",  # skip pre-allocation delay
+        f"--split={connections}",
+        f"--max-connection-per-server={connections}",
+        "--min-split-size=1M",
+        video_url,
+    ]
+    logger.info(f"aria2c: {output_path.name} ({connections} connections)")
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        with tqdm.tqdm(
+            total=total_size or None,
+            initial=existing_size,
+            unit="B",
+            unit_scale=True,
+            desc=episode_label or output_path.name,
+            ncols=80,
+            unit_divisor=1024,
+            disable=quiet,
+        ) as bar:
+            last = existing_size
+            while proc.poll() is None:
+                try:
+                    current = (
+                        output_path.stat().st_size if output_path.exists() else last
+                    )
+                except OSError:
+                    current = last
+                bar.update(current - last)
+                last = current
+                time.sleep(0.5)
+            # Final update after process exits
+            try:
+                current = output_path.stat().st_size if output_path.exists() else last
+                bar.update(current - last)
+            except OSError:
+                pass
+
+        if proc.returncode == 0 and output_path.exists():
+            return str(output_path)
+        logger.error(f"aria2c exited with code {proc.returncode}")
+        return None
+    except Exception as e:
+        logger.error(f"aria2c failed: {e}")
+        return None
+
+
+# Registry mapping config value → backend function.
+# To add a new backend: define a function with the same signature and add it here.
+_BACKENDS: dict = {
+    "requests": _download_requests,
+    "aria2c": _download_aria2c,
+}
+
+
+@dataclass
+class PreparedDownload:
+    """Pre-resolved download info ready for file download.
+
+    Contains the direct video URL and headers extracted via Playwright,
+    so the actual download only needs requests (no browser).
+    """
+
+    video_url: str
+    headers: dict
+    kwik_url: str  # For logging/debugging
 
 
 def _setup_session() -> requests.Session:
@@ -145,7 +331,7 @@ class Downloader:
             # Method 2: Extract from page HTML via regex
             try:
                 html = page.content()
-                match = re.search(r'kwik\.(cx|si)/f/([a-zA-Z0-9]+)', html)
+                match = re.search(r"kwik\.(cx|si)/f/([a-zA-Z0-9]+)", html)
                 if match:
                     kwik_url = f"https://kwik.{match.group(1)}/f/{match.group(2)}"
                     logger.info(f"Got kwik URL from HTML regex: {kwik_url}")
@@ -332,85 +518,38 @@ class Downloader:
         filename: str,
         episode_label: str = "",
         output_dir: Optional[Path] = None,
+        quiet: bool = False,
     ) -> Optional[str]:
-        """
-        Download a video file with progress bar and resume support.
-
-        Uses requests (not Playwright) for speed and resume capability.
-        """
+        """Dispatch to the configured download backend."""
         if output_dir is None:
             output_dir = self.output_dir
         output_path = output_dir / filename
 
-        # Handle existing partial files (resume)
-        existing_size = output_path.stat().st_size if output_path.exists() else 0
-        if existing_size > 0:
-            headers["Range"] = f"bytes={existing_size}-"
-            logger.info(f"Resuming from {existing_size} bytes")
+        from anime_pahe_dl.config import get_config as _get_config
 
-        session = _setup_session()
-
-        for attempt in range(1, 4):
-            try:
-                resp = session.get(
-                    video_url, headers=headers, stream=True, timeout=30
-                )
-
-                if resp.status_code == 416:
-                    # Range not satisfiable — file is already complete
-                    logger.info("File already complete")
-                    return str(output_path)
-
-                if resp.status_code not in (200, 206):
-                    logger.error(f"Download HTTP {resp.status_code}")
-                    return None
-
-                total = int(resp.headers.get("content-length", 0)) + existing_size
-                mode = "ab" if existing_size else "wb"
-
-                with open(output_path, mode) as f, tqdm.tqdm(
-                    total=total,
-                    initial=existing_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=episode_label or filename,
-                    ncols=80,
-                    unit_divisor=1024,
-                ) as bar:
-                    for chunk in resp.iter_content(chunk_size=1024 * 256):
-                        if chunk:
-                            f.write(chunk)
-                            bar.update(len(chunk))
-
-                return str(output_path)
-
-            except Exception as e:
-                logger.warning(f"Download attempt {attempt}/3 failed: {e}")
-                if attempt < 3:
-                    time.sleep(3)
-
-        return None
+        backend_name = _get_config("download_backend", "requests")
+        backend_fn = _BACKENDS.get(backend_name)
+        if backend_fn is None:
+            logger.error(
+                f"Unknown download_backend '{backend_name}'. "
+                f"Available: {list(_BACKENDS)}"
+            )
+            return None
+        return backend_fn(video_url, headers, output_path, episode_label, quiet=quiet)
 
     # ── Public API: full download pipeline ───────────────────────
 
-    def download(
-        self,
-        pahewin_url: str,
-        anime_name: str = "Anime",
-        episode: int = 1,
-        quality: str = "720p",
-    ) -> Optional[str]:
-        """
-        Full download pipeline: pahe.win → kwik.cx → .mp4
+    def prepare(self, pahewin_url: str) -> Optional[PreparedDownload]:
+        """Resolve pahe.win → kwik.cx → direct video URL (Playwright-heavy).
 
-        Args:
-            pahewin_url: URL from AnimePahe quality dropdown (pahe.win/xxxxx)
-            anime_name: Name of the anime (for filename)
-            episode: Episode number
-            quality: Quality string (e.g., "1080p")
+        This does all the browser automation work upfront:
+        1. Resolve pahe.win redirect to kwik.cx/f/ URL
+        2. Extract CSRF token from kwik page
+        3. POST to get direct .mp4 video URL
 
-        Returns:
-            Path to downloaded file, or None on failure
+        Returns a PreparedDownload that can be passed to download_prepared()
+        which only needs requests (no Playwright), making it safe to run
+        in a background thread while Playwright prepares the next episode.
         """
         # Step 1: Resolve pahe.win redirect
         if "pahe.win" in pahewin_url:
@@ -435,17 +574,74 @@ class Downloader:
             return None
 
         video_url, dl_headers = result
+        return PreparedDownload(
+            video_url=video_url,
+            headers=dl_headers,
+            kwik_url=kwik_url,
+        )
 
-        # Step 4: Download the file
+    def prepare_batch(
+        self,
+        episodes: list[tuple[int, str]],
+        max_workers: int = 3,
+    ) -> dict[int, Optional[PreparedDownload]]:
+        """Resolve multiple pahe.win URLs in parallel using concurrent browser tabs.
+
+        Runs up to max_workers Playwright page chains simultaneously.
+        Each chain is independent: pahe.win → kwik.cx → direct .mp4 URL.
+
+        Args:
+            episodes: List of (episode_number, pahewin_url) tuples.
+            max_workers: Max concurrent Playwright page chains.
+
+        Returns:
+            {episode_number: PreparedDownload or None}
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        # Ensure Playwright is initialized on the calling thread before spawning workers
+        self._ensure_playwright()
+
+        results: dict[int, Optional[PreparedDownload]] = {}
+
+        def _prep_one(ep_num: int, url: str) -> tuple[int, Optional[PreparedDownload]]:
+            return ep_num, self.prepare(url)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(_prep_one, ep_num, url): ep_num for ep_num, url in episodes
+            }
+            for future in as_completed(futures):
+                ep_num, prepared = future.result()
+                results[ep_num] = prepared
+
+        return results
+
+    def download_prepared(
+        self,
+        prepared: PreparedDownload,
+        anime_name: str = "Anime",
+        episode: int = 1,
+        quality: str = "720p",
+        quiet: bool = False,
+    ) -> Optional[str]:
+        """Download a pre-prepared video file (no Playwright needed).
+
+        This only uses requests for the actual file download, so it can
+        safely run in a background thread while Playwright prepares the
+        next episode on the main thread.
+
+        Args:
+            quiet: Suppress tqdm progress bars (used by WorkerPool which
+                   has its own Rich Live progress display).
+        """
         filename = safe_filename(anime_name, episode, quality)
 
-        # Check config for folder creation
         from anime_pahe_dl.config import get_config
+
         create_folder = get_config("create_folder", True)
 
-        # Determine output directory
         if create_folder:
-            # Create anime-specific subfolder
             anime_folder = re.sub(r"[^0-9A-Za-z]+", "_", anime_name).strip("_")
             anime_folder = re.sub(r"_+", "_", anime_folder) or "Anime"
             output_dir = self.output_dir / anime_folder
@@ -454,8 +650,29 @@ class Downloader:
             output_dir = self.output_dir
 
         return self._download_file(
-            video_url, dl_headers, filename, f"Ep {episode}", output_dir
+            prepared.video_url,
+            prepared.headers,
+            filename,
+            f"Ep {episode}",
+            output_dir,
+            quiet=quiet,
         )
+
+    def download(
+        self,
+        pahewin_url: str,
+        anime_name: str = "Anime",
+        episode: int = 1,
+        quality: str = "720p",
+    ) -> Optional[str]:
+        """Full download pipeline: pahe.win → kwik.cx → .mp4
+
+        Convenience method that calls prepare() + download_prepared().
+        """
+        prepared = self.prepare(pahewin_url)
+        if not prepared:
+            return None
+        return self.download_prepared(prepared, anime_name, episode, quality)
 
     def close(self):
         """Clean up Playwright resources (only if we created them)."""
@@ -466,7 +683,7 @@ class Downloader:
                 self._pw_context.close()
             except Exception:
                 pass
-        if hasattr(self, '_pw') and self._pw:
+        if hasattr(self, "_pw") and self._pw:
             try:
                 self._pw.stop()
             except Exception:

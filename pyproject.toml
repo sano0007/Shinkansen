@@ -3,21 +3,63 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "anime-pahe-dl"
+name = "shinkansen-anime-pahe-downloader"
 version = "1.0.0"
 description = "Fast, reliable anime downloader for AnimePahe - built with lessons from autopahe"
+readme = "README.md"
+license = { text = "MIT" }
 authors = [{ name = "Pasindu Janith" }]
 requires-python = ">=3.9"
+keywords = ["anime", "downloader", "animepahe", "cli", "playwright"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet",
+    "Topic :: Multimedia :: Video",
+]
 dependencies = [
     "click>=8.1.0",
     "playwright>=1.45.0",
     "requests>=2.31.0",
     "tqdm>=4.66.0",
     "rich>=13.0.0",
+    "InquirerPy>=0.3.4",
 ]
 
 [project.scripts]
-anime-dl = "anime_pahe_dl.cli:cli"
+shinkansen = "anime_pahe_dl.cli:cli"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=4.1.0",
+    "responses>=0.24.0",
+]
+dev = [
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "pre-commit>=3.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pasindujanith/anime-pahe-dl"
+Repository = "https://github.com/pasindujanith/anime-pahe-dl.git"
+"Bug Tracker" = "https://github.com/pasindujanith/anime-pahe-dl/issues"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring real network or Playwright",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

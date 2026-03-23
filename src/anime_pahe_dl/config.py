@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-CONFIG_DIR = Path.home() / ".anime-dl"
+CONFIG_DIR = Path.home() / ".shinkansen"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {
@@ -13,7 +13,12 @@ DEFAULT_CONFIG = {
     "auto_retry": True,
     "retry_count": 3,
     "create_folder": True,
-    "parallel_downloads": 1,
+    "parallel_downloads": 3,
+    "download_backend": "requests",  # "requests" | "aria2c"
+    "aria2c_path": "aria2c",  # path to aria2c binary (or full path)
+    "aria2c_connections": 16,  # segments per file (--split / --max-connection-per-server)
+    "prepare_workers": 3,  # parallel Playwright instances for episode preparation
+    "max_downloads": 5,  # max concurrent file downloads
 }
 
 
