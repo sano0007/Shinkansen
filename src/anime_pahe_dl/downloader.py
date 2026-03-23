@@ -41,12 +41,13 @@ logger = logging.getLogger(__name__)
 #   (video_url, headers, output_path, episode_label) -> Optional[str]
 # Add a new entry to _BACKENDS to support additional download tools.
 
+
 def _download_requests(
-        video_url: str,
-        headers: dict,
-        output_path: Path,
-        episode_label: str = "",
-        quiet: bool = False,
+    video_url: str,
+    headers: dict,
+    output_path: Path,
+    episode_label: str = "",
+    quiet: bool = False,
 ) -> Optional[str]:
     """Built-in requests-based downloader with resume and progress bar."""
     headers = dict(headers)  # don't mutate the caller's dict
@@ -74,14 +75,14 @@ def _download_requests(
             mode = "ab" if existing_size else "wb"
 
             with open(output_path, mode) as f, tqdm.tqdm(
-                    total=total,
-                    initial=existing_size,
-                    unit="B",
-                    unit_scale=True,
-                    desc=episode_label or output_path.name,
-                    ncols=80,
-                    unit_divisor=1024,
-                    disable=quiet,
+                total=total,
+                initial=existing_size,
+                unit="B",
+                unit_scale=True,
+                desc=episode_label or output_path.name,
+                ncols=80,
+                unit_divisor=1024,
+                disable=quiet,
             ) as bar:
                 for chunk in resp.iter_content(chunk_size=1024 * 256):
                     if chunk:
@@ -99,11 +100,11 @@ def _download_requests(
 
 
 def _download_aria2c(
-        video_url: str,
-        headers: dict,
-        output_path: Path,
-        episode_label: str = "",
-        quiet: bool = False,
+    video_url: str,
+    headers: dict,
+    output_path: Path,
+    episode_label: str = "",
+    quiet: bool = False,
 ) -> Optional[str]:
     """aria2c-based downloader — multi-connection, fast, built-in resume.
 
@@ -114,13 +115,16 @@ def _download_aria2c(
     import subprocess
 
     from anime_pahe_dl.config import get_config as _cfg
+
     aria2c_bin = _cfg("aria2c_path", "aria2c")
     if not shutil.which(aria2c_bin):
         logger.warning(
             f"aria2c not found at '{aria2c_bin}'. "
             "Falling back to requests. Install aria2c or set aria2c_path config."
         )
-        return _download_requests(video_url, headers, output_path, episode_label, quiet=quiet)
+        return _download_requests(
+            video_url, headers, output_path, episode_label, quiet=quiet
+        )
 
     connections = int(_cfg("aria2c_connections", 16))
 
@@ -128,7 +132,9 @@ def _download_aria2c(
     total_size = 0
     try:
         session = _setup_session()
-        head = session.head(video_url, headers=headers, timeout=10, allow_redirects=True)
+        head = session.head(
+            video_url, headers=headers, timeout=10, allow_redirects=True
+        )
         total_size = int(head.headers.get("content-length", 0))
     except Exception:
         pass
@@ -159,19 +165,21 @@ def _download_aria2c(
             stderr=subprocess.DEVNULL,
         )
         with tqdm.tqdm(
-                total=total_size or None,
-                initial=existing_size,
-                unit="B",
-                unit_scale=True,
-                desc=episode_label or output_path.name,
-                ncols=80,
-                unit_divisor=1024,
-                disable=quiet,
+            total=total_size or None,
+            initial=existing_size,
+            unit="B",
+            unit_scale=True,
+            desc=episode_label or output_path.name,
+            ncols=80,
+            unit_divisor=1024,
+            disable=quiet,
         ) as bar:
             last = existing_size
             while proc.poll() is None:
                 try:
-                    current = output_path.stat().st_size if output_path.exists() else last
+                    current = (
+                        output_path.stat().st_size if output_path.exists() else last
+                    )
                 except OSError:
                     current = last
                 bar.update(current - last)
@@ -208,6 +216,7 @@ class PreparedDownload:
     Contains the direct video URL and headers extracted via Playwright,
     so the actual download only needs requests (no browser).
     """
+
     video_url: str
     headers: dict
     kwik_url: str  # For logging/debugging
@@ -322,7 +331,7 @@ class Downloader:
             # Method 2: Extract from page HTML via regex
             try:
                 html = page.content()
-                match = re.search(r'kwik\.(cx|si)/f/([a-zA-Z0-9]+)', html)
+                match = re.search(r"kwik\.(cx|si)/f/([a-zA-Z0-9]+)", html)
                 if match:
                     kwik_url = f"https://kwik.{match.group(1)}/f/{match.group(2)}"
                     logger.info(f"Got kwik URL from HTML regex: {kwik_url}")
@@ -509,7 +518,7 @@ class Downloader:
         filename: str,
         episode_label: str = "",
         output_dir: Optional[Path] = None,
-            quiet: bool = False,
+        quiet: bool = False,
     ) -> Optional[str]:
         """Dispatch to the configured download backend."""
         if output_dir is None:
@@ -517,6 +526,7 @@ class Downloader:
         output_path = output_dir / filename
 
         from anime_pahe_dl.config import get_config as _get_config
+
         backend_name = _get_config("download_backend", "requests")
         backend_fn = _BACKENDS.get(backend_name)
         if backend_fn is None:
@@ -571,9 +581,9 @@ class Downloader:
         )
 
     def prepare_batch(
-            self,
-            episodes: list[tuple[int, str]],
-            max_workers: int = 3,
+        self,
+        episodes: list[tuple[int, str]],
+        max_workers: int = 3,
     ) -> dict[int, Optional[PreparedDownload]]:
         """Resolve multiple pahe.win URLs in parallel using concurrent browser tabs.
 
@@ -599,8 +609,7 @@ class Downloader:
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(_prep_one, ep_num, url): ep_num
-                for ep_num, url in episodes
+                pool.submit(_prep_one, ep_num, url): ep_num for ep_num, url in episodes
             }
             for future in as_completed(futures):
                 ep_num, prepared = future.result()
@@ -609,12 +618,12 @@ class Downloader:
         return results
 
     def download_prepared(
-            self,
-            prepared: PreparedDownload,
-            anime_name: str = "Anime",
-            episode: int = 1,
-            quality: str = "720p",
-            quiet: bool = False,
+        self,
+        prepared: PreparedDownload,
+        anime_name: str = "Anime",
+        episode: int = 1,
+        quality: str = "720p",
+        quiet: bool = False,
     ) -> Optional[str]:
         """Download a pre-prepared video file (no Playwright needed).
 
@@ -629,6 +638,7 @@ class Downloader:
         filename = safe_filename(anime_name, episode, quality)
 
         from anime_pahe_dl.config import get_config
+
         create_folder = get_config("create_folder", True)
 
         if create_folder:
@@ -640,16 +650,20 @@ class Downloader:
             output_dir = self.output_dir
 
         return self._download_file(
-            prepared.video_url, prepared.headers, filename,
-            f"Ep {episode}", output_dir, quiet=quiet,
+            prepared.video_url,
+            prepared.headers,
+            filename,
+            f"Ep {episode}",
+            output_dir,
+            quiet=quiet,
         )
 
     def download(
-            self,
-            pahewin_url: str,
-            anime_name: str = "Anime",
-            episode: int = 1,
-            quality: str = "720p",
+        self,
+        pahewin_url: str,
+        anime_name: str = "Anime",
+        episode: int = 1,
+        quality: str = "720p",
     ) -> Optional[str]:
         """Full download pipeline: pahe.win → kwik.cx → .mp4
 
@@ -669,7 +683,7 @@ class Downloader:
                 self._pw_context.close()
             except Exception:
                 pass
-        if hasattr(self, '_pw') and self._pw:
+        if hasattr(self, "_pw") and self._pw:
             try:
                 self._pw.stop()
             except Exception:

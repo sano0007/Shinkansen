@@ -19,9 +19,9 @@ def parse_range(range_str: str) -> list[int]:
 
 
 def select_source(
-        sources: list[Source],
-        quality: str = "best",
-        prefer_dub: bool = False,
+    sources: list[Source],
+    quality: str = "best",
+    prefer_dub: bool = False,
 ) -> Optional[Source]:
     """Select the best matching source from available options."""
     if not sources:
@@ -34,7 +34,9 @@ def select_source(
 
     if quality == "best":
         # Sort by quality descending, pick highest
-        preferred.sort(key=lambda s: int(s.quality.replace("p", "") or "0"), reverse=True)
+        preferred.sort(
+            key=lambda s: int(s.quality.replace("p", "") or "0"), reverse=True
+        )
         return preferred[0]
     elif quality == "worst":
         preferred.sort(key=lambda s: int(s.quality.replace("p", "") or "0"))

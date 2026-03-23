@@ -34,9 +34,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-# Suppress urllib3's LibreSSL warning (macOS system Python) — not actionable by the user
-warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
-
 import click
 from rich.console import Console
 from rich.panel import Panel
@@ -47,6 +44,9 @@ from anime_pahe_dl.client import AnimePaheClient
 from anime_pahe_dl.config import load_config, set_config, get_config, DEFAULT_CONFIG
 from anime_pahe_dl.downloader import Downloader
 from anime_pahe_dl.worker_pool import WorkerPool, EpisodeTask
+
+# Suppress urllib3's LibreSSL warning (macOS system Python) — not actionable by the user
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 console = Console()
 
@@ -59,6 +59,7 @@ def _check_aria2c(prompt_install: bool = False) -> bool:
     """
     import shutil
     from anime_pahe_dl.config import get_config
+
     bin_path = get_config("aria2c_path", "aria2c")
     if shutil.which(bin_path):
         return True
@@ -119,13 +120,15 @@ def save_history(history: list[dict]):
 def add_to_history(anime_name: str, episode: int, quality: str, file_path: str):
     """Add a download to history."""
     history = load_history()
-    history.append({
-        "anime": anime_name,
-        "episode": episode,
-        "quality": quality,
-        "file": file_path,
-        "date": datetime.now().isoformat(),
-    })
+    history.append(
+        {
+            "anime": anime_name,
+            "episode": episode,
+            "quality": quality,
+            "file": file_path,
+            "date": datetime.now().isoformat(),
+        }
+    )
     save_history(history)
 
 
@@ -157,7 +160,7 @@ def _cleanup():
 atexit.register(_cleanup)
 
 # Re-export from utils for backward compatibility and test imports
-from anime_pahe_dl.utils import parse_range, select_source  # noqa: F401
+from anime_pahe_dl.utils import parse_range, select_source  # noqa: F401, E402
 
 
 # ── CLI Commands ─────────────────────────────────────────────────
@@ -294,12 +297,22 @@ def sources(session, episode_num):
 @click.option("-e", "--episode", type=int, help="Single episode number")
 @click.option("-r", "--range", "ep_range", help="Episode range (e.g., 1-12 or 1,3,5-7)")
 @click.option("-a", "--all", "download_all", is_flag=True, help="Download all episodes")
-@click.option("-q", "--quality", default="best", help="Quality: 360, 480, 720, 1080, best, worst")
+@click.option(
+    "-q", "--quality", default="best", help="Quality: 360, 480, 720, 1080, best, worst"
+)
 @click.option("-d", "--dub", is_flag=True, help="Prefer English dub")
 @click.option("-o", "--output", default="downloads", help="Output directory")
 @click.option("-n", "--name", default=None, help="Anime name (for filename)")
-@click.option("-w", "--workers", type=int, default=None, help="Parallel Playwright workers (default: from config)")
-def download(session, episode, ep_range, download_all, quality, dub, output, name, workers):
+@click.option(
+    "-w",
+    "--workers",
+    type=int,
+    default=None,
+    help="Parallel Playwright workers (default: from config)",
+)
+def download(
+    session, episode, ep_range, download_all, quality, dub, output, name, workers
+):
     """Download episodes from AnimePahe."""
     client = get_client()
 
@@ -341,9 +354,12 @@ def download(session, episode, ep_range, download_all, quality, dub, output, nam
     # Build task list for the worker pool
     tasks = [
         EpisodeTask(
-            ep_num=ep, ep_session=ep_session_map[ep],
-            anime_session=session, anime_name=anime_name,
-            quality=quality, prefer_dub=dub,
+            ep_num=ep,
+            ep_session=ep_session_map[ep],
+            anime_session=session,
+            anime_name=anime_name,
+            quality=quality,
+            prefer_dub=dub,
         )
         for ep in ep_numbers
         if ep in ep_session_map
@@ -370,6 +386,7 @@ def download(session, episode, ep_range, download_all, quality, dub, output, nam
 def setup():
     """Install Playwright browsers (run this first!)."""
     import subprocess
+
     console.print("[bold]Installing Playwright Chromium...[/bold]")
     result = subprocess.run(
         [sys.executable, "-m", "playwright", "install", "chromium"],
@@ -422,10 +439,27 @@ def history(clear):
 
 @cli.command()
 @click.argument("query")
-@click.option("-q", "--quality", default=None, help="Quality: 360, 480, 720, 1080, best (will ask if not set)")
-@click.option("-d", "--dub", is_flag=True, default=None, help="Prefer English dub (will ask if not set)")
+@click.option(
+    "-q",
+    "--quality",
+    default=None,
+    help="Quality: 360, 480, 720, 1080, best (will ask if not set)",
+)
+@click.option(
+    "-d",
+    "--dub",
+    is_flag=True,
+    default=None,
+    help="Prefer English dub (will ask if not set)",
+)
 @click.option("-o", "--output", default="downloads", help="Output directory")
-@click.option("-w", "--workers", type=int, default=None, help="Parallel Playwright workers (default: from config)")
+@click.option(
+    "-w",
+    "--workers",
+    type=int,
+    default=None,
+    help="Parallel Playwright workers (default: from config)",
+)
 def get(query, quality, dub, output, workers):
     """Interactive search and download - all in one!"""
     client = get_client()
@@ -514,9 +548,12 @@ def get(query, quality, dub, output, workers):
 
     tasks = [
         EpisodeTask(
-            ep_num=ep, ep_session=ep_session_map[ep],
-            anime_session=session, anime_name=anime_name,
-            quality=quality, prefer_dub=prefer_dub,
+            ep_num=ep,
+            ep_session=ep_session_map[ep],
+            anime_session=session,
+            anime_name=anime_name,
+            quality=quality,
+            prefer_dub=prefer_dub,
         )
         for ep in ep_numbers
         if ep in ep_session_map

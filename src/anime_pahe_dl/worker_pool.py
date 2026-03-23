@@ -48,6 +48,7 @@ _POISON = None
 @dataclass
 class EpisodeTask:
     """Work item for the prepare worker queue."""
+
     ep_num: int
     ep_session: str
     anime_session: str
@@ -59,6 +60,7 @@ class EpisodeTask:
 @dataclass
 class EpisodeResult:
     """Result from a prepare worker, consumed by the download coordinator."""
+
     ep_num: int
     source: Optional[Source] = None
     prepared: Optional[PreparedDownload] = None
@@ -171,13 +173,13 @@ class PrepareWorker(threading.Thread):
     """
 
     def __init__(
-            self,
-            worker_id: int,
-            task_queue: queue.Queue,
-            result_queue: queue.Queue,
-            cookies_ready: threading.Event,
-            output_dir: str,
-            tracker: ProgressTracker,
+        self,
+        worker_id: int,
+        task_queue: queue.Queue,
+        result_queue: queue.Queue,
+        cookies_ready: threading.Event,
+        output_dir: str,
+        tracker: ProgressTracker,
     ):
         super().__init__(daemon=True, name=f"PrepareWorker-{worker_id}")
         self._id = worker_id
@@ -239,9 +241,7 @@ class PrepareWorker(threading.Thread):
                 self._result_queue.put(result)
             except Exception as e:
                 logger.warning(f"Worker {self._id} failed on ep {task.ep_num}: {e}")
-                self._result_queue.put(
-                    EpisodeResult(ep_num=task.ep_num, error=str(e))
-                )
+                self._result_queue.put(EpisodeResult(ep_num=task.ep_num, error=str(e)))
             finally:
                 self._task_queue.task_done()
 
@@ -294,11 +294,11 @@ class WorkerPool:
     """
 
     def __init__(
-            self,
-            num_workers: int = 3,
-            max_downloads: int = 5,
-            output_dir: str = "downloads",
-            on_complete: Optional[Callable] = None,
+        self,
+        num_workers: int = 3,
+        max_downloads: int = 5,
+        output_dir: str = "downloads",
+        on_complete: Optional[Callable] = None,
     ):
         self._num_workers = max(1, num_workers)
         self._max_downloads = max(1, max_downloads)
@@ -408,8 +408,8 @@ class WorkerPool:
         remaining = num_active
 
         with ThreadPoolExecutor(
-                max_workers=self._max_downloads,
-                thread_name_prefix="Download",
+            max_workers=self._max_downloads,
+            thread_name_prefix="Download",
         ) as pool:
             futures = {}
 
@@ -430,9 +430,7 @@ class WorkerPool:
 
                 # Start download
                 self._tracker.set_download(result.ep_num, "starting...")
-                future = pool.submit(
-                    self._do_download, result, anime_name, quality
-                )
+                future = pool.submit(self._do_download, result, anime_name, quality)
                 futures[future] = result
 
                 # Check for completed downloads
@@ -445,9 +443,7 @@ class WorkerPool:
                             self._tracker.add_completed()
                             self._tracker.clear_download(res.ep_num)
                             if self._on_complete:
-                                self._on_complete(
-                                    res.ep_num, res.source.quality, path
-                                )
+                                self._on_complete(res.ep_num, res.source.quality, path)
                         else:
                             self._tracker.add_failed()
                             self._tracker.clear_download(res.ep_num)
@@ -476,7 +472,7 @@ class WorkerPool:
         self._tracker.mark_done()
 
     def _do_download(
-            self, result: EpisodeResult, anime_name: str, quality: str
+        self, result: EpisodeResult, anime_name: str, quality: str
     ) -> Optional[str]:
         """Download a single prepared episode (runs in download thread pool)."""
         ep = result.ep_num
@@ -507,6 +503,7 @@ class WorkerPool:
 
         # Determine the output path for progress polling
         from anime_pahe_dl.config import get_config as _cfg
+
         create_folder = _cfg("create_folder", True)
         fname = safe_filename(anime_name, ep, q)
         base = Path(self._output_dir)
@@ -522,7 +519,9 @@ class WorkerPool:
         dl_done = threading.Event()
 
         def _run():
-            dl_result[0] = dl.download_prepared(result.prepared, anime_name, ep, q, quiet=True)
+            dl_result[0] = dl.download_prepared(
+                result.prepared, anime_name, ep, q, quiet=True
+            )
             dl_done.set()
 
         t = threading.Thread(target=_run, daemon=True)
@@ -538,7 +537,9 @@ class WorkerPool:
                 pct = min(100, int(current / total_size * 100))
                 mb_done = current / 1024 / 1024
                 mb_total = total_size / 1024 / 1024
-                self._tracker.set_download(ep, f"{pct}% ({mb_done:.0f}/{mb_total:.0f}MB)")
+                self._tracker.set_download(
+                    ep, f"{pct}% ({mb_done:.0f}/{mb_total:.0f}MB)"
+                )
             dl_done.wait(timeout=1)
 
         t.join(timeout=5)
@@ -554,10 +555,10 @@ class WorkerPool:
     def _show_progress(self):
         """Rich Live progress display on the main thread."""
         with Live(
-                self._tracker.render(),
-                console=console,
-                refresh_per_second=2,
-                transient=False,
+            self._tracker.render(),
+            console=console,
+            refresh_per_second=2,
+            transient=False,
         ) as live:
             while not self._tracker.is_done:
                 live.update(self._tracker.render())

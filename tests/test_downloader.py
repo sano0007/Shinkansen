@@ -57,7 +57,7 @@ class TestSafeFilename:
 class TestDownloaderInit:
     def test_creates_output_dir(self, tmp_path):
         new_dir = tmp_path / "new_output"
-        dl = Downloader(str(new_dir))
+        dl = Downloader(str(new_dir))  # noqa: F841
         assert new_dir.exists()
         assert new_dir.is_dir()
 
@@ -93,7 +93,9 @@ class TestDownloaderInit:
 
 class TestResolvePahewin:
     def test_redirect_anchor(self, tmp_path, mock_playwright):
-        mock_playwright["page"].eval_on_selector.return_value = "https://kwik.cx/f/abc123"
+        mock_playwright[
+            "page"
+        ].eval_on_selector.return_value = "https://kwik.cx/f/abc123"
 
         dl = Downloader(str(tmp_path))
         dl._pw_context = mock_playwright["context"]
@@ -105,9 +107,9 @@ class TestResolvePahewin:
         # wait_for_function raises (redirect anchor method fails)
         mock_playwright["page"].wait_for_function.side_effect = Exception("timeout")
         # But page HTML contains the kwik URL
-        mock_playwright["page"].content.return_value = (
-            '<html><body>Link: kwik.cx/f/def456</body></html>'
-        )
+        mock_playwright[
+            "page"
+        ].content.return_value = "<html><body>Link: kwik.cx/f/def456</body></html>"
 
         dl = Downloader(str(tmp_path))
         dl._pw_context = mock_playwright["context"]
@@ -126,7 +128,9 @@ class TestResolvePahewin:
         assert result is None
 
     def test_navigation_error(self, tmp_path, mock_playwright):
-        mock_playwright["page"].goto.side_effect = Exception("net::ERR_CONNECTION_REFUSED")
+        mock_playwright["page"].goto.side_effect = Exception(
+            "net::ERR_CONNECTION_REFUSED"
+        )
 
         dl = Downloader(str(tmp_path))
         dl._pw_context = mock_playwright["context"]
@@ -422,8 +426,16 @@ class TestPrepare:
         dl = Downloader(str(tmp_path))
         dl._resolve_pahewin = MagicMock(return_value="https://kwik.cx/f/abc")
         dl._extract_kwik_token = MagicMock(
-            return_value={"token": "t", "cookies": [], "user_agent": "ua", "url": "https://kwik.cx/f/abc"})
-        dl._get_video_url = MagicMock(return_value=("https://cdn.example.com/v.mp4", {"User-Agent": "ua"}))
+            return_value={
+                "token": "t",
+                "cookies": [],
+                "user_agent": "ua",
+                "url": "https://kwik.cx/f/abc",
+            }
+        )
+        dl._get_video_url = MagicMock(
+            return_value=("https://cdn.example.com/v.mp4", {"User-Agent": "ua"})
+        )
 
         result = dl.prepare("https://pahe.win/xxx")
         assert isinstance(result, PreparedDownload)
@@ -434,8 +446,16 @@ class TestPrepare:
         dl = Downloader(str(tmp_path))
         dl._resolve_pahewin = MagicMock()  # Should NOT be called
         dl._extract_kwik_token = MagicMock(
-            return_value={"token": "t", "cookies": [], "user_agent": "ua", "url": "https://kwik.cx/f/abc"})
-        dl._get_video_url = MagicMock(return_value=("https://cdn.example.com/v.mp4", {}))
+            return_value={
+                "token": "t",
+                "cookies": [],
+                "user_agent": "ua",
+                "url": "https://kwik.cx/f/abc",
+            }
+        )
+        dl._get_video_url = MagicMock(
+            return_value=("https://cdn.example.com/v.mp4", {})
+        )
 
         result = dl.prepare("https://kwik.cx/f/abc")
         assert result is not None
@@ -462,7 +482,9 @@ class TestPrepare:
     def test_video_url_fails(self, tmp_path):
         dl = Downloader(str(tmp_path))
         dl._resolve_pahewin = MagicMock(return_value="https://kwik.cx/f/abc")
-        dl._extract_kwik_token = MagicMock(return_value={"token": "t", "cookies": [], "user_agent": "ua", "url": "u"})
+        dl._extract_kwik_token = MagicMock(
+            return_value={"token": "t", "cookies": [], "user_agent": "ua", "url": "u"}
+        )
         dl._get_video_url = MagicMock(return_value=None)
         result = dl.prepare("https://pahe.win/xxx")
         assert result is None
@@ -471,7 +493,9 @@ class TestPrepare:
 class TestDownloadPrepared:
     def test_creates_anime_folder(self, tmp_path, monkeypatch):
         monkeypatch.setattr("anime_pahe_dl.config.CONFIG_DIR", tmp_path)
-        monkeypatch.setattr("anime_pahe_dl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr(
+            "anime_pahe_dl.config.CONFIG_FILE", tmp_path / "config.json"
+        )
 
         dl = Downloader(str(tmp_path / "downloads"))
         prepared = PreparedDownload(
@@ -479,23 +503,32 @@ class TestDownloadPrepared:
             headers={"User-Agent": "test"},
             kwik_url="https://kwik.cx/f/abc",
         )
-        dl._download_file = MagicMock(return_value=str(tmp_path / "downloads" / "Naruto" / "Naruto_Ep01_720p.mp4"))
+        dl._download_file = MagicMock(
+            return_value=str(tmp_path / "downloads" / "Naruto" / "Naruto_Ep01_720p.mp4")
+        )
 
         result = dl.download_prepared(prepared, "Naruto", 1, "720p")
         assert result is not None
 
         # Verify _download_file was called with anime subfolder
         call_args = dl._download_file.call_args
-        output_dir = call_args[0][4] if len(call_args[0]) > 4 else call_args.kwargs.get("output_dir")
+        output_dir = (
+            call_args[0][4]
+            if len(call_args[0]) > 4
+            else call_args.kwargs.get("output_dir")
+        )
         # The output_dir should end with the anime folder name
         assert "Naruto" in str(output_dir)
 
     def test_no_folder(self, tmp_path, monkeypatch):
         monkeypatch.setattr("anime_pahe_dl.config.CONFIG_DIR", tmp_path)
-        monkeypatch.setattr("anime_pahe_dl.config.CONFIG_FILE", tmp_path / "config.json")
+        monkeypatch.setattr(
+            "anime_pahe_dl.config.CONFIG_FILE", tmp_path / "config.json"
+        )
 
         # Save config with create_folder=False
         import json
+
         (tmp_path / "config.json").write_text(json.dumps({"create_folder": False}))
 
         dl = Downloader(str(tmp_path / "downloads"))
@@ -504,7 +537,9 @@ class TestDownloadPrepared:
             headers={"User-Agent": "test"},
             kwik_url="https://kwik.cx/f/abc",
         )
-        dl._download_file = MagicMock(return_value=str(tmp_path / "downloads" / "Anime_Ep01_720p.mp4"))
+        dl._download_file = MagicMock(
+            return_value=str(tmp_path / "downloads" / "Anime_Ep01_720p.mp4")
+        )
 
         result = dl.download_prepared(prepared, "Anime", 1, "720p")
         assert result is not None

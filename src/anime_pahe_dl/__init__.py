@@ -15,8 +15,7 @@ Key differences from your original:
 import json
 import logging
 import re
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 from urllib.parse import quote
 
@@ -78,6 +77,7 @@ class Episode:
 @dataclass
 class Source:
     """A download source for an episode."""
+
     url: str  # pahe.win URL (from the dropdown)
     quality: str  # e.g. "1080p"
     audio: str  # e.g. "jpn" or "eng"
@@ -124,8 +124,8 @@ class AnimePaheClient:
 
     def __init__(self):
         self._http = _build_session()
-        self._pw = None           # Playwright instance (lazy)
-        self._pw_context = None   # Browser context (lazy)
+        self._pw = None  # Playwright instance (lazy)
+        self._pw_context = None  # Browser context (lazy)
         self._base_url: Optional[str] = None  # Working mirror
         self._cf_cleared = False  # Whether Cloudflare has been cleared
 
@@ -135,9 +135,7 @@ class AnimePaheClient:
         """Try direct HTTP GET against all mirrors."""
         for base in MIRRORS:
             try:
-                resp = self._http.get(
-                    f"{base}/api", params=params, timeout=15
-                )
+                resp = self._http.get(f"{base}/api", params=params, timeout=15)
                 if resp.status_code == 200 and resp.content:
                     # Verify it's actually JSON, not a Cloudflare challenge page
                     try:
@@ -145,7 +143,9 @@ class AnimePaheClient:
                         self._base_url = base
                         return data
                     except Exception:
-                        logger.debug(f"Mirror {base} returned non-JSON (likely CF challenge)")
+                        logger.debug(
+                            f"Mirror {base} returned non-JSON (likely CF challenge)"
+                        )
                         continue
                 elif resp.status_code == 404:
                     # 404 from API usually means Cloudflare hasn't been cleared
@@ -191,7 +191,8 @@ class AnimePaheClient:
             cookies = self._pw_context.cookies()
             for c in cookies:
                 self._http.cookies.set(
-                    c["name"], c["value"],
+                    c["name"],
+                    c["value"],
                     domain=c.get("domain", ""),
                     path=c.get("path", "/"),
                 )
@@ -247,8 +248,14 @@ class AnimePaheClient:
             for i in range(30):
                 try:
                     title = page.title().lower()
-                    if "ddos" not in title and "checking" not in title and "just a moment" not in title:
-                        logger.info(f"Cloudflare cleared after {i+1}s (title: '{page.title()}')")
+                    if (
+                        "ddos" not in title
+                        and "checking" not in title
+                        and "just a moment" not in title
+                    ):
+                        logger.info(
+                            f"Cloudflare cleared after {i + 1}s (title: '{page.title()}')"
+                        )
                         break
                 except Exception:
                     pass
@@ -319,23 +326,27 @@ class AnimePaheClient:
         page_num = 1
 
         while True:
-            data = self._api_get_with_fallback({
-                "m": "release",
-                "id": anime_session,
-                "sort": "episode_asc",
-                "page": str(page_num),
-            })
+            data = self._api_get_with_fallback(
+                {
+                    "m": "release",
+                    "id": anime_session,
+                    "sort": "episode_asc",
+                    "page": str(page_num),
+                }
+            )
             if not data or "data" not in data:
                 break
 
             for ep_data in data["data"]:
-                episodes.append(Episode(
-                    number=ep_data.get("episode", len(episodes) + 1),
-                    session=ep_data.get("session", ""),
-                    title=ep_data.get("title", ""),
-                    snapshot=ep_data.get("snapshot", ""),
-                    filler=ep_data.get("filler", 0) == 1,
-                ))
+                episodes.append(
+                    Episode(
+                        number=ep_data.get("episode", len(episodes) + 1),
+                        session=ep_data.get("session", ""),
+                        title=ep_data.get("title", ""),
+                        snapshot=ep_data.get("snapshot", ""),
+                        filler=ep_data.get("filler", 0) == 1,
+                    )
+                )
 
             last_page = data.get("last_page", 1)
             if page_num >= last_page:
@@ -346,14 +357,18 @@ class AnimePaheClient:
 
     def get_episode_page(self, anime_session: str, page_num: int = 1) -> Optional[dict]:
         """Get a single page of episode data (for lazy loading)."""
-        return self._api_get_with_fallback({
-            "m": "release",
-            "id": anime_session,
-            "sort": "episode_asc",
-            "page": str(page_num),
-        })
+        return self._api_get_with_fallback(
+            {
+                "m": "release",
+                "id": anime_session,
+                "sort": "episode_asc",
+                "page": str(page_num),
+            }
+        )
 
-    def get_episode_session(self, anime_session: str, episode_num: int) -> Optional[str]:
+    def get_episode_session(
+        self, anime_session: str, episode_num: int
+    ) -> Optional[str]:
         """Get the session ID for a specific episode number."""
         first_page = self.get_episode_page(anime_session, 1)
         if not first_page:
@@ -405,13 +420,16 @@ class AnimePaheClient:
                 page.wait_for_timeout(5000)
 
             # Extract all download links with metadata
-            items = page.eval_on_selector_all(
-                'a.dropdown-item[target="_blank"]',
-                """els => els.map(e => ({
-                    href: e.href,
-                    text: e.textContent.trim()
-                }))""",
-            ) or []
+            items = (
+                page.eval_on_selector_all(
+                    'a.dropdown-item[target="_blank"]',
+                    """els => els.map(e => ({
+                            href: e.href,
+                            text: e.textContent.trim()
+                        }))""",
+                )
+                or []
+            )
 
             sources = []
             for item in items:
@@ -433,13 +451,15 @@ class AnimePaheClient:
                 size = size_match.group(1) if size_match else ""
 
                 if href:
-                    sources.append(Source(
-                        url=href,
-                        quality=quality,
-                        audio=audio,
-                        fansub=fansub,
-                        size=size,
-                    ))
+                    sources.append(
+                        Source(
+                            url=href,
+                            quality=quality,
+                            audio=audio,
+                            fansub=fansub,
+                            size=size,
+                        )
+                    )
 
             return sources
 

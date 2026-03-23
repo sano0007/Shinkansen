@@ -95,7 +95,12 @@ class TestLoadCachedCookies:
             "saved_at": now - 60,  # 1 minute ago
             "base_url": "https://animepahe.si",
             "cookies": [
-                {"name": "cf_clearance", "value": "tok123", "domain": ".animepahe.si", "path": "/"},
+                {
+                    "name": "cf_clearance",
+                    "value": "tok123",
+                    "domain": ".animepahe.si",
+                    "path": "/",
+                },
             ],
         }
         (tmp_config_dir / "cookies.json").write_text(json.dumps(cache))
@@ -110,7 +115,12 @@ class TestLoadCachedCookies:
             "saved_at": time.time() - (COOKIE_MAX_AGE + 60),  # expired
             "base_url": "https://animepahe.si",
             "cookies": [
-                {"name": "cf_clearance", "value": "old_tok", "domain": ".animepahe.si", "path": "/"},
+                {
+                    "name": "cf_clearance",
+                    "value": "old_tok",
+                    "domain": ".animepahe.si",
+                    "path": "/",
+                },
             ],
         }
         (tmp_config_dir / "cookies.json").write_text(json.dumps(cache))
@@ -126,7 +136,11 @@ class TestLoadCachedCookies:
         assert client._base_url is None
 
     def test_empty_cookies_list(self, tmp_config_dir):
-        cache = {"saved_at": time.time(), "cookies": [], "base_url": "https://animepahe.si"}
+        cache = {
+            "saved_at": time.time(),
+            "cookies": [],
+            "base_url": "https://animepahe.si",
+        }
         (tmp_config_dir / "cookies.json").write_text(json.dumps(cache))
 
         client = AnimePaheClient()
@@ -148,7 +162,12 @@ class TestSaveCookiesToCache:
 
         mock_ctx = MagicMock()
         mock_ctx.cookies.return_value = [
-            {"name": "cf_clearance", "value": "saved_tok", "domain": ".animepahe.si", "path": "/"},
+            {
+                "name": "cf_clearance",
+                "value": "saved_tok",
+                "domain": ".animepahe.si",
+                "path": "/",
+            },
         ]
         client._pw_context = mock_ctx
 
@@ -251,8 +270,18 @@ class TestTransferCookies:
         client = AnimePaheClient()
         mock_ctx = MagicMock()
         mock_ctx.cookies.return_value = [
-            {"name": "cf_clearance", "value": "val1", "domain": ".animepahe.si", "path": "/"},
-            {"name": "__cf_bm", "value": "val2", "domain": ".animepahe.si", "path": "/"},
+            {
+                "name": "cf_clearance",
+                "value": "val1",
+                "domain": ".animepahe.si",
+                "path": "/",
+            },
+            {
+                "name": "__cf_bm",
+                "value": "val2",
+                "domain": ".animepahe.si",
+                "path": "/",
+            },
         ]
         client._pw_context = mock_ctx
 
@@ -267,7 +296,9 @@ class TestTransferCookies:
 class TestSearch:
     def test_returns_anime_list(self, tmp_config_dir, sample_anime_api_response):
         client = AnimePaheClient()
-        client._api_get_with_fallback = MagicMock(return_value=sample_anime_api_response)
+        client._api_get_with_fallback = MagicMock(
+            return_value=sample_anime_api_response
+        )
 
         results = client.search("zom")
         assert len(results) == 2
@@ -290,7 +321,9 @@ class TestSearch:
 class TestGetEpisodes:
     def test_single_page(self, tmp_config_dir, sample_episode_api_response):
         client = AnimePaheClient()
-        client._api_get_with_fallback = MagicMock(return_value=sample_episode_api_response)
+        client._api_get_with_fallback = MagicMock(
+            return_value=sample_episode_api_response
+        )
 
         eps = client.get_episodes("sess1")
         assert len(eps) == 3
@@ -340,8 +373,18 @@ class TestGetEpisodeSession:
         assert result == "ep_sess_2"
 
     def test_later_page(self, tmp_config_dir):
-        page1 = {"total": 35, "per_page": 30, "last_page": 2, "data": [{"session": f"s{i}"} for i in range(30)]}
-        page2 = {"total": 35, "per_page": 30, "last_page": 2, "data": [{"session": f"s{30 + i}"} for i in range(5)]}
+        page1 = {
+            "total": 35,
+            "per_page": 30,
+            "last_page": 2,
+            "data": [{"session": f"s{i}"} for i in range(30)],
+        }
+        page2 = {
+            "total": 35,
+            "per_page": 30,
+            "last_page": 2,
+            "data": [{"session": f"s{30 + i}"} for i in range(5)],
+        }
 
         client = AnimePaheClient()
         client.get_episode_page = MagicMock(side_effect=[page1, page2])

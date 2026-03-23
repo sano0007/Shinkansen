@@ -127,7 +127,9 @@ class TestHistory:
 # ── CLI command tests ────────────────────────────────────────────
 
 
-def _make_mock_client(search_results=None, episodes=None, sources=None, episode_session="ep_sess"):
+def _make_mock_client(
+    search_results=None, episodes=None, sources=None, episode_session="ep_sess"
+):
     """Build a mock AnimePaheClient with configurable return values."""
     mock = MagicMock()
     mock.search.return_value = search_results or []
@@ -152,7 +154,14 @@ class TestCliSearch:
         runner = CliRunner()
         mock_client = _make_mock_client(
             search_results=[
-                Anime(id=1, session="s1", title="Naruto Shippuden", episodes=500, status="Completed", year="2007"),
+                Anime(
+                    id=1,
+                    session="s1",
+                    title="Naruto Shippuden",
+                    episodes=500,
+                    status="Completed",
+                    year="2007",
+                ),
             ]
         )
 
@@ -211,7 +220,13 @@ class TestCliSources:
         mock_client = _make_mock_client(
             episode_session="ep1",
             sources=[
-                Source(url="https://pahe.win/a", quality="1080p", audio="jpn", fansub="SubsPlease", size="250MB"),
+                Source(
+                    url="https://pahe.win/a",
+                    quality="1080p",
+                    audio="jpn",
+                    fansub="SubsPlease",
+                    size="250MB",
+                ),
             ],
         )
 
@@ -240,7 +255,9 @@ class TestCliDownload:
         )
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
-            with patch("anime_pahe_dl.cli.get_downloader", return_value=_make_mock_downloader()):
+            with patch(
+                "anime_pahe_dl.cli.get_downloader", return_value=_make_mock_downloader()
+            ):
                 result = runner.invoke(cli, ["download", "test_session"])
 
         assert result.exit_code == 0
@@ -257,9 +274,17 @@ class TestCliDownload:
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
             with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
-                result = runner.invoke(cli, [
-                    "download", "test_session", "--episode", "1", "--name", "TestAnime"
-                ])
+                result = runner.invoke(
+                    cli,
+                    [
+                        "download",
+                        "test_session",
+                        "--episode",
+                        "1",
+                        "--name",
+                        "TestAnime",
+                    ],
+                )
 
         assert result.exit_code == 0
         mock_pool.run.assert_called_once()
@@ -275,9 +300,17 @@ class TestCliDownload:
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
             with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
-                result = runner.invoke(cli, [
-                    "download", "test_session", "--range", "1-3", "--name", "TestAnime"
-                ])
+                result = runner.invoke(
+                    cli,
+                    [
+                        "download",
+                        "test_session",
+                        "--range",
+                        "1-3",
+                        "--name",
+                        "TestAnime",
+                    ],
+                )
 
         assert result.exit_code == 0
         mock_pool.run.assert_called_once()
@@ -318,7 +351,13 @@ class TestCliHistory:
 
     def test_with_data(self, tmp_config_dir):
         history = [
-            {"anime": "Naruto", "episode": 1, "quality": "720p", "file": "f.mp4", "date": "2024-01-01T00:00:00"},
+            {
+                "anime": "Naruto",
+                "episode": 1,
+                "quality": "720p",
+                "file": "f.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
         ]
         (tmp_config_dir / "history.json").write_text(json.dumps(history))
 
@@ -331,9 +370,27 @@ class TestCliHistory:
 class TestCliLibrary:
     def test_groups_by_anime(self, tmp_config_dir):
         history = [
-            {"anime": "Naruto", "episode": 1, "quality": "720p", "file": "dl/f1.mp4", "date": "2024-01-01T00:00:00"},
-            {"anime": "Naruto", "episode": 2, "quality": "720p", "file": "dl/f2.mp4", "date": "2024-01-01T00:00:00"},
-            {"anime": "Bleach", "episode": 1, "quality": "1080p", "file": "dl/b1.mp4", "date": "2024-01-01T00:00:00"},
+            {
+                "anime": "Naruto",
+                "episode": 1,
+                "quality": "720p",
+                "file": "dl/f1.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
+            {
+                "anime": "Naruto",
+                "episode": 2,
+                "quality": "720p",
+                "file": "dl/f2.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
+            {
+                "anime": "Bleach",
+                "episode": 1,
+                "quality": "1080p",
+                "file": "dl/b1.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
         ]
         (tmp_config_dir / "history.json").write_text(json.dumps(history))
 
@@ -353,8 +410,20 @@ class TestCliLibrary:
 class TestCliFind:
     def test_matches(self, tmp_config_dir):
         history = [
-            {"anime": "Naruto", "episode": 1, "quality": "720p", "file": "f1.mp4", "date": "2024-01-01T00:00:00"},
-            {"anime": "Bleach", "episode": 1, "quality": "720p", "file": "f2.mp4", "date": "2024-01-01T00:00:00"},
+            {
+                "anime": "Naruto",
+                "episode": 1,
+                "quality": "720p",
+                "file": "f1.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
+            {
+                "anime": "Bleach",
+                "episode": 1,
+                "quality": "720p",
+                "file": "f2.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
         ]
         (tmp_config_dir / "history.json").write_text(json.dumps(history))
 
@@ -365,7 +434,13 @@ class TestCliFind:
 
     def test_no_match(self, tmp_config_dir):
         history = [
-            {"anime": "Naruto", "episode": 1, "quality": "720p", "file": "f.mp4", "date": "2024-01-01T00:00:00"},
+            {
+                "anime": "Naruto",
+                "episode": 1,
+                "quality": "720p",
+                "file": "f.mp4",
+                "date": "2024-01-01T00:00:00",
+            },
         ]
         (tmp_config_dir / "history.json").write_text(json.dumps(history))
 

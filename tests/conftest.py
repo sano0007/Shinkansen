@@ -14,7 +14,9 @@ def tmp_config_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("anime_pahe_dl.config.CONFIG_DIR", tmp_path)
     monkeypatch.setattr("anime_pahe_dl.config.CONFIG_FILE", tmp_path / "config.json")
     monkeypatch.setattr("anime_pahe_dl.client.COOKIE_CACHE_DIR", tmp_path)
-    monkeypatch.setattr("anime_pahe_dl.client.COOKIE_CACHE_FILE", tmp_path / "cookies.json")
+    monkeypatch.setattr(
+        "anime_pahe_dl.client.COOKIE_CACHE_FILE", tmp_path / "cookies.json"
+    )
     monkeypatch.setattr("anime_pahe_dl.cli.HISTORY_DIR", tmp_path)
     monkeypatch.setattr("anime_pahe_dl.cli.HISTORY_FILE", tmp_path / "history.json")
     return tmp_path
@@ -56,9 +58,27 @@ def sample_episode_api_response():
         "current_page": 1,
         "last_page": 1,
         "data": [
-            {"episode": 1, "session": "ep_sess_1", "title": "", "snapshot": "", "filler": 0},
-            {"episode": 2, "session": "ep_sess_2", "title": "", "snapshot": "", "filler": 0},
-            {"episode": 3, "session": "ep_sess_3", "title": "", "snapshot": "", "filler": 1},
+            {
+                "episode": 1,
+                "session": "ep_sess_1",
+                "title": "",
+                "snapshot": "",
+                "filler": 0,
+            },
+            {
+                "episode": 2,
+                "session": "ep_sess_2",
+                "title": "",
+                "snapshot": "",
+                "filler": 0,
+            },
+            {
+                "episode": 3,
+                "session": "ep_sess_3",
+                "title": "",
+                "snapshot": "",
+                "filler": 1,
+            },
         ],
     }
 
@@ -67,10 +87,34 @@ def sample_episode_api_response():
 def sample_sources():
     """Sample download sources with varied qualities and audio."""
     return [
-        Source(url="https://pahe.win/aaa", quality="360p", audio="jpn", fansub="SubsPlease", size="50MB"),
-        Source(url="https://pahe.win/bbb", quality="720p", audio="jpn", fansub="SubsPlease", size="120MB"),
-        Source(url="https://pahe.win/ccc", quality="1080p", audio="jpn", fansub="Judas", size="250MB"),
-        Source(url="https://pahe.win/ddd", quality="720p", audio="eng", fansub="Funimation", size="130MB"),
+        Source(
+            url="https://pahe.win/aaa",
+            quality="360p",
+            audio="jpn",
+            fansub="SubsPlease",
+            size="50MB",
+        ),
+        Source(
+            url="https://pahe.win/bbb",
+            quality="720p",
+            audio="jpn",
+            fansub="SubsPlease",
+            size="120MB",
+        ),
+        Source(
+            url="https://pahe.win/ccc",
+            quality="1080p",
+            audio="jpn",
+            fansub="Judas",
+            size="250MB",
+        ),
+        Source(
+            url="https://pahe.win/ddd",
+            quality="720p",
+            audio="eng",
+            fansub="Funimation",
+            size="130MB",
+        ),
     ]
 
 
@@ -97,7 +141,12 @@ def mock_playwright(mocker):
     mock_context = MagicMock()
     mock_context.new_page.return_value = mock_page
     mock_context.cookies.return_value = [
-        {"name": "cf_clearance", "value": "abc123", "domain": ".animepahe.si", "path": "/"},
+        {
+            "name": "cf_clearance",
+            "value": "abc123",
+            "domain": ".animepahe.si",
+            "path": "/",
+        },
     ]
 
     mock_browser = MagicMock()
@@ -110,8 +159,14 @@ def mock_playwright(mocker):
     mock_sync_pw.start.return_value = mock_pw
 
     # Patch in both modules (they import locally)
-    mocker.patch("anime_pahe_dl.client.sync_playwright", return_value=mock_sync_pw, create=True)
-    mocker.patch("anime_pahe_dl.downloader.sync_playwright", return_value=mock_sync_pw, create=True)
+    mocker.patch(
+        "anime_pahe_dl.client.sync_playwright", return_value=mock_sync_pw, create=True
+    )
+    mocker.patch(
+        "anime_pahe_dl.downloader.sync_playwright",
+        return_value=mock_sync_pw,
+        create=True,
+    )
 
     return {
         "pw": mock_pw,
