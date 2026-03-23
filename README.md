@@ -2,7 +2,7 @@
 
 > **A blazing-fast, fully interactive terminal application for downloading anime.**
 
-`anime-pahe-dl` is a powerful Terminal User Interface (TUI) that lets you search and batch-download anime directly
+`Shinkansen` is a powerful Terminal User Interface (TUI) that lets you search and batch-download anime directly
 from [AnimePahe](https://animepahe.si).
 It natively bypasses Cloudflare, fetches episodes in true parallel, and features an elegant interactive split-screen
 menu right in your terminal.
@@ -16,21 +16,19 @@ using [pipx](https://pipx.pypa.io/) (the modern standard for Python CLIs):
 
 ```bash
 # Safely install globally and set up the Chromium headless browser in one go!
-pipx install git+https://github.com/sano0007/Shinkansen_Anime_Downloader.git && anime-dl setup
+pipx install git+https://github.com/sano0007/Shinkansen.git && shinkansen setup
 ```
-
-*(Note: Replace `sano0007/Shinkansen_Anime_Downloader` with your actual GitHub repository URL once published!)*
 
 ## ⚙️ Manual Installation (For Development)
 
 If you are cloning the repository directly instead of using the 1-command install:
 ```bash
-git clone https://github.com/sano0007/Shinkansen_Anime_Downloader.git
+git clone https://github.com/sano0007/Shinkansen.git
 cd anime-pahe-dl
 pip install -e .
 
 # Install Playwright browser dependencies (required exactly once)
-anime-dl setup
+shinkansen setup
 ```
 
 ## 🎮 Usage
@@ -39,7 +37,7 @@ anime-dl setup
 
 Simply type the root command anywhere in your terminal to launch the pure TUI experience:
 ```bash
-anime-dl
+shinkansen
 ```
 
 This launches a beautiful, dynamically-rendered menu offering Search & Download, Library browsing, History tracking, and
@@ -49,49 +47,49 @@ recursive Settings management—all fully navigable via your arrow keys!
 
 ```bash
 # Interactive download directly from a query
-anime-dl get "naruto"
+shinkansen get "naruto"
 
 # Search for anime
-anime-dl search "naruto"
+shinkansen search "naruto"
 
 # List episodes
-anime-dl episodes <session>
+shinkansen episodes <session>
 
 # Download a single episode
-anime-dl download <session> --episode 1 --quality 720 --name "Naruto"
+shinkansen download <session> --episode 1 --quality 720 --name "Naruto"
 
 # Download a range of episodes
-anime-dl download <session> --range 1-12 --quality 1080
+shinkansen download <session> --range 1-12 --quality 1080
 
 # Download all episodes
-anime-dl download <session> --all
+shinkansen download <session> --all
 
 # Override parallel workers (default: from config)
-anime-dl download <session> --all --workers 5
+shinkansen download <session> --all --workers 5
 
 # Show available sources for an episode
-anime-dl sources <session> 1
+shinkansen sources <session> 1
 
 # View download history
-anime-dl history
+shinkansen history
 
 # Browse downloaded anime library
-anime-dl library
+shinkansen library
 
 # Find anime in library
-anime-dl find "naruto"
+shinkansen find "naruto"
 
 # Manage configuration
-anime-dl config show
-anime-dl config set quality 720
-anime-dl config set create_folder true
+shinkansen config show
+shinkansen config set quality 720
+shinkansen config set create_folder true
 ```
 
 ## Features
 
 - **HTTP-first approach** -- tries direct API calls before launching a browser, for speed
 - **Cloudflare bypass** -- Playwright fallback when Cloudflare blocks HTTP requests
-- **Persistent cookie caching** -- saves Cloudflare session cookies to disk (`~/.anime-dl/cookies.json`) so subsequent
+- **Persistent cookie caching** -- saves Cloudflare session cookies to disk (`~/.shinkansen/cookies.json`) so subsequent
   runs skip the challenge entirely (25-min TTL)
 - **Parallel batch downloads** -- spawns multiple Playwright browser instances (`prepare_workers`, default 3) to prepare
   episodes in true parallel, with a separate download thread pool (`max_downloads`, default 5); 200 episodes drops from
@@ -105,9 +103,9 @@ anime-dl config set create_folder true
   `--all`)
 - **Download history** -- tracks every download with anime name, episode, quality, and date
 - **Anime library** -- browse and search your downloaded collection
-- **Config system** -- persistent settings at `~/.anime-dl/config.json` (default quality, output dir, folder creation,
+- **Config system** -- persistent settings at `~/.shinkansen/config.json` (default quality, output dir, folder creation,
   etc.)
-- **Interactive TUI** -- run `anime-dl` to access a beautiful arrow-key navigable main menu routing your entire
+- **Interactive TUI** -- run `shinkansen` to access a beautiful arrow-key navigable main menu routing your entire
   application
 - **Automatic Retries** -- any episodes that timeout or fail directly prompt you to instantly retry them at the end of
   the batch
@@ -147,7 +145,7 @@ CLI (cli.py)
 
 ## Configuration
 
-Settings are stored at `~/.anime-dl/config.json`:
+Settings are stored at `~/.shinkansen/config.json`:
 
 | Setting              | Default     | Description                                          |
 |----------------------|-------------|------------------------------------------------------|

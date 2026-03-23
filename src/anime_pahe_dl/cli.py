@@ -2,16 +2,16 @@
 CLI interface for anime-pahe-dl.
 
 Usage:
-    anime-dl search "bleach"
-    anime-dl episodes <session>
-    anime-dl download <session> --episode 1 --quality 1080
-    anime-dl download <session> --range 1-12 --quality 720
-    anime-dl download <session> --all
-    anime-dl get "bleach"          # Interactive search & download
-    anime-dl history               # Show download history
-    anime-dl library               # Show downloaded anime
-    anime-dl config show           # Show config
-    anime-dl config set quality 720
+    shinkansen search "bleach"
+    shinkansen episodes <session>
+    shinkansen download <session> --episode 1 --quality 1080
+    shinkansen download <session> --range 1-12 --quality 720
+    shinkansen download <session> --all
+    shinkansen get "bleach"          # Interactive search & download
+    shinkansen history               # Show download history
+    shinkansen library               # Show downloaded anime
+    shinkansen config show           # Show config
+    shinkansen config set quality 720
 
 Improvements:
 - Shows all info (quality, size, sub/dub) before downloading
@@ -66,7 +66,7 @@ def _check_aria2c(prompt_install: bool = False) -> bool:
         "  [bold]macOS :[/bold]  brew install aria2\n"
         "  [bold]Ubuntu:[/bold]  sudo apt install aria2\n"
         "  [bold]Windows:[/bold] winget install aria2  [dim](or scoop install aria2)[/dim]\n"
-        "\nThen run [cyan]anime-dl config set aria2c_path /path/to/aria2c[/cyan] if it's not in PATH."
+        "\nThen run [cyan]shinkansen config set aria2c_path /path/to/aria2c[/cyan] if it's not in PATH."
     )
 
     if prompt_install:
@@ -85,7 +85,7 @@ _client: Optional[AnimePaheClient] = None
 _downloader: Optional[Downloader] = None
 
 # History file
-HISTORY_DIR = Path.home() / ".anime-dl"
+HISTORY_DIR = Path.home() / ".shinkansen"
 HISTORY_FILE = HISTORY_DIR / "history.json"
 
 
@@ -326,8 +326,8 @@ def search(query):
     console.print(table)
     console.print(
         "\n[dim]Use the session ID with other commands:[/dim]"
-        "\n  [cyan]anime-dl episodes <session>[/cyan]"
-        "\n  [cyan]anime-dl download <session> --episode 1[/cyan]"
+        "\n  [cyan]shinkansen episodes <session>[/cyan]"
+        "\n  [cyan]shinkansen download <session> --episode 1[/cyan]"
     )
 
 
@@ -582,7 +582,7 @@ def _render_welcome_banner():
 
     right = Group(
         "[dim]Tips for getting started[/dim]",
-        "Run [cyan]anime-dl config show[/cyan] to overview settings",
+        "Run [cyan]shinkansen config show[/cyan] to overview settings",
         "Use [cyan]arrow keys[/cyan] to elegantly navigate menus\n",
         "[dim]Recent activity[/dim]",
         recent,
@@ -776,7 +776,7 @@ def config_show():
         table.add_row(key, str(value))
 
     console.print(table)
-    console.print("\n[dim]Use 'anime-dl config set <key> <value>' to change[/dim]")
+    console.print("\n[dim]Use 'shinkansen config set <key> <value>' to change[/dim]")
 
 
 @config.command("set")

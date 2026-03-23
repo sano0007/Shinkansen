@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-CONFIG_DIR = Path.home() / ".anime-dl"
+CONFIG_DIR = Path.home() / ".shinkansen"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULT_CONFIG = {

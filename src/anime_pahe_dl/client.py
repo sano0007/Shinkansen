@@ -36,7 +36,7 @@ MIRRORS = [
 ]
 
 # Persistent cookie cache — avoids Cloudflare challenge on repeat runs
-COOKIE_CACHE_DIR = Path.home() / ".anime-dl"
+COOKIE_CACHE_DIR = Path.home() / ".shinkansen"
 COOKIE_CACHE_FILE = COOKIE_CACHE_DIR / "cookies.json"
 COOKIE_MAX_AGE = 25 * 60  # 25 minutes — CF cookies typically last ~30 min
 

@@ -35,7 +35,7 @@ dependencies = [
 ]
 
 [project.scripts]
-anime-dl = "anime_pahe_dl.cli:cli"
+shinkansen = "anime_pahe_dl.cli:cli"
 
 [project.optional-dependencies]
 test = [
