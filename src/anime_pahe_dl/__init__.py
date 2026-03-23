@@ -15,13 +15,18 @@ Key differences from your original:
 import json
 import logging
 import re
-from dataclasses import dataclass
-from typing import Optional
-from urllib.parse import quote
+import warnings
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+# Suppress urllib3's LibreSSL warning (macOS system Python) before other imports
+warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
+
+from dataclasses import dataclass  # noqa: E402
+from typing import Optional  # noqa: E402
+from urllib.parse import quote  # noqa: E402
+
+import requests  # noqa: E402
+from requests.adapters import HTTPAdapter  # noqa: E402
+from urllib3.util.retry import Retry  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

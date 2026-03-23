@@ -27,9 +27,12 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import requests
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
+from rich.rule import Rule
+from rich.spinner import Spinner
+from rich.table import Table
 
 from anime_pahe_dl.client import AnimePaheClient, Source
 from anime_pahe_dl.downloader import Downloader, PreparedDownload, safe_filename
@@ -80,6 +83,7 @@ class ProgressTracker:
         self.anime_name = anime_name
         self.worker_status: dict[int, str] = {}
         self.download_status: dict[int, str] = {}
+        self._spinners: dict[int, Spinner] = {}
         self.completed = 0
         self.failed = 0
         self.skipped = 0
@@ -88,10 +92,15 @@ class ProgressTracker:
     def set_worker(self, worker_id: int, status: str):
         with self._lock:
             self.worker_status[worker_id] = status
+            if worker_id not in self._spinners:
+                self._spinners[worker_id] = Spinner("dots", text=status)
+            else:
+                self._spinners[worker_id].update(text=status)
 
     def clear_worker(self, worker_id: int):
         with self._lock:
             self.worker_status.pop(worker_id, None)
+            self._spinners.pop(worker_id, None)
 
     def set_download(self, ep_num: int, status: str):
         with self._lock:
@@ -127,37 +136,44 @@ class ProgressTracker:
             completed = self.completed
             failed = self.failed
             skipped = self.skipped
+            # we need to shallow copy spinners to avoid mutation during iteration
+            # but Spinner handles its own animation time so we just grab the ref
+            spinners = dict(self._spinners)
 
-        lines = []
+        status_table = Table(show_header=False, box=None, padding=(0, 2))
+        status_table.add_column("Type", style="dim", justify="right")
+        status_table.add_column("Content")
 
-        # Worker status
         if workers:
-            worker_parts = []
             for wid in sorted(workers):
-                worker_parts.append(f"[cyan]W{wid}[/cyan] {workers[wid]}")
-            lines.append("  Workers:  " + "  ".join(worker_parts))
+                spinner = spinners.get(wid, workers[wid])
+                status_table.add_row(f"[cyan]W{wid}[/cyan]", spinner)
+        else:
+            status_table.add_row("[cyan]Workers[/cyan]", "[dim]Idle[/dim]")
 
-        # Download status
         if downloads:
-            dl_parts = []
             for ep in sorted(downloads):
-                dl_parts.append(f"Ep {ep}: {downloads[ep]}")
-            lines.append("  Downloads:  " + "  |  ".join(dl_parts))
+                # parse the percentage if available to make a pseudo bar
+                text = downloads[ep]
+                status_table.add_row(f"[magenta]Ep {ep}[/magenta]", text)
+        else:
+            status_table.add_row("[magenta]Downloads[/magenta]", "[dim]Idle[/dim]")
 
-        # Overall progress
         done_total = completed + failed + skipped
-        lines.append(
-            f"  Progress: [green]{completed} done[/green]"
-            f"  [yellow]{skipped} skipped[/yellow]"
-            f"  [red]{failed} failed[/red]"
-            f"  [dim]{done_total}/{self.total}[/dim]"
+        progress_text = (
+            f"[green]✓ {completed} done[/green]    "
+            f"[yellow]⊘ {skipped} skipped[/yellow]    "
+            f"[red]✗ {failed} failed[/red]    "
+            f"[dim]({done_total}/{self.total})[/dim]"
         )
 
-        body = "\n".join(lines) if lines else "  Starting..."
+        content = Group(status_table, Rule(style="dim"), progress_text)
+
         return Panel(
-            body,
-            title=f"{self.anime_name} ({self.total} episodes)",
+            content,
+            title=f"[bold white]{self.anime_name}[/bold white]",
             border_style="cyan",
+            expand=False,
         )
 
 

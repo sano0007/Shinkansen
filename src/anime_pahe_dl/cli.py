@@ -29,7 +29,6 @@ import atexit
 import json
 import logging
 import sys
-import warnings
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -37,16 +36,13 @@ from typing import Optional
 import click
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Prompt, Confirm
+from rich.prompt import Confirm
 from rich.table import Table
 
 from anime_pahe_dl.client import AnimePaheClient
 from anime_pahe_dl.config import load_config, set_config, get_config, DEFAULT_CONFIG
 from anime_pahe_dl.downloader import Downloader
 from anime_pahe_dl.worker_pool import WorkerPool, EpisodeTask
-
-# Suppress urllib3's LibreSSL warning (macOS system Python) — not actionable by the user
-warnings.filterwarnings("ignore", message="urllib3 v2 only supports OpenSSL")
 
 console = Console()
 
@@ -375,9 +371,14 @@ def download(
 
     console.print(
         Panel(
-            f"[green]✓ Success: {success}[/green]  [red]✗ Failed: {failed}[/red]",
-            title="Download Complete",
+            f"[bold]Anime:[/bold] {anime_name}\n"
+            f"[bold]Target:[/bold] {output}/\n\n"
+            f"[green]✓ Downloaded: {success} episode(s)[/green]\n"
+            + (f"[red]✗ Failed: {failed} episode(s)[/red]\n" if failed else "")
+            + "\n[dim]Enjoy watching![/dim]",
+            title="✨ Download Complete ✨",
             border_style="green" if failed == 0 else "yellow",
+            expand=False,
         )
     )
 
@@ -437,6 +438,60 @@ def history(clear):
     console.print(f"\n[dim]Total downloads: {len(history_data)}[/dim]")
 
 
+def _render_welcome_banner():
+    """Render a Claude-style split layout welcome banner."""
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.align import Align
+    from rich.console import Group
+
+    # A simple but impactful logo
+    ascii_art = """[bold magenta]
+    ▶
+  ██████
+  ██████
+[/bold magenta]"""
+
+    table = Table(show_header=False, box=None, padding=(0, 2), show_edge=False)
+    table.add_column("Left", justify="center", width=28)
+    table.add_column("Right", justify="left")
+
+    left = Group(
+        Align.center("\n[bold white]Welcome back![/bold white]"),
+        Align.center(ascii_art),
+        Align.center("[dim]anime-pahe-dl v1.0[/dim]"),
+        Align.center(f"[dim]~/{get_config('output_dir', 'downloads')}[/dim]"),
+    )
+
+    history = load_history()
+    recent = "No recent activity"
+    if history:
+        recent_anime = []
+        for h in reversed(history):
+            if h.get("anime") and h["anime"] not in recent_anime:
+                recent_anime.append(h["anime"])
+            if len(recent_anime) >= 2:
+                break
+        recent = "\n".join(f"• {a}" for a in recent_anime)
+
+    right = Group(
+        "[dim]Tips for getting started[/dim]",
+        "Run [cyan]anime-dl config show[/cyan] to overview settings",
+        "Use [cyan]arrow keys[/cyan] to elegantly navigate menus\n",
+        "[dim]Recent activity[/dim]",
+        recent,
+    )
+
+    table.add_row(left, right)
+
+    return Panel(
+        table,
+        title="[bold magenta] anime-pahe-dl [/bold magenta]",
+        border_style="magenta",
+        expand=False,
+    )
+
+
 @cli.command()
 @click.argument("query")
 @click.option(
@@ -464,6 +519,8 @@ def get(query, quality, dub, output, workers):
     """Interactive search and download - all in one!"""
     client = get_client()
 
+    console.print(_render_welcome_banner())
+
     # Step 1: Search
     with console.status("[bold cyan]Searching...", spinner="dots"):
         results = client.search(query)
@@ -472,18 +529,28 @@ def get(query, quality, dub, output, workers):
         console.print("[red]No results found.[/red]")
         return
 
-    # Show search results
-    console.print(f"\n[bold]Search results for '{query}':[/bold]\n")
-    for i, anime in enumerate(results, 1):
-        console.print(f"  [cyan]{i}.[/cyan] {anime.title} ({anime.episodes} eps)")
-
     # Step 2: Select anime
-    choice = Prompt.ask(
-        "\n[bold]Select anime[/bold] (number)",
-        default="1",
-        choices=[str(i) for i in range(1, len(results) + 1)],
-    )
-    selected = results[int(choice) - 1]
+    from InquirerPy import inquirer
+    from InquirerPy.base.control import Choice
+
+    choices = [
+        Choice(
+            i,
+            name=f"{anime.title} ({anime.episodes} eps) - {anime.year} {anime.status}",
+        )
+        for i, anime in enumerate(results)
+    ]
+
+    try:
+        selected_index = inquirer.select(
+            message=f"Select anime for '{query}':",
+            choices=choices,
+            pointer="➜",
+        ).execute()
+    except KeyboardInterrupt:
+        return
+
+    selected = results[selected_index]
     session = selected.session
     anime_name = selected.title
 
@@ -499,14 +566,16 @@ def get(query, quality, dub, output, workers):
 
     console.print(f"[bold]Found {len(eps)} episodes[/bold]")
 
-    # Create episode lookup (episode number -> session) to avoid extra API calls
     ep_session_map = {ep.number: ep.session for ep in eps}
 
     # Step 4: Select episodes
-    ep_choices = Prompt.ask(
-        "\n[bold]Episodes to download[/bold] (e.g., 1-5, 1,3,5 or 'all')",
-        default="1",
-    )
+    try:
+        ep_choices = inquirer.text(
+            message="Episodes to download (e.g., 1-5, 1,3,5 or 'all'):",
+            default="all",
+        ).execute()
+    except KeyboardInterrupt:
+        return
 
     if ep_choices.lower() == "all":
         ep_numbers = [ep.number for ep in eps]
@@ -517,20 +586,31 @@ def get(query, quality, dub, output, workers):
 
     # Step 5: Select quality (if not provided)
     if quality is None:
-        quality = Prompt.ask(
-            "\n[bold]Quality[/bold] (360, 480, 720, 1080, best)",
-            default="best",
-            choices=["360", "480", "720", "1080", "best"],
-        )
+        try:
+            quality = inquirer.select(
+                message="Quality:",
+                choices=["360", "480", "720", "1080", "best"],
+                default="best",
+                pointer="➜",
+            ).execute()
+        except KeyboardInterrupt:
+            return
 
     # Step 6: Select sub/dub (if not provided)
     if dub is None:
-        audio_choice = Prompt.ask(
-            "\n[bold]Audio[/bold] (sub = Japanese with subtitles, dub = English voice)",
-            default="sub",
-            choices=["sub", "dub"],
-        )
-        prefer_dub = audio_choice == "dub"
+        try:
+            audio_choice = inquirer.select(
+                message="Audio:",
+                choices=[
+                    Choice("sub", name="🎌 Japanese (Sub)"),
+                    Choice("dub", name="🔊 English (Dub)"),
+                ],
+                default="sub",
+                pointer="➜",
+            ).execute()
+            prefer_dub = audio_choice == "dub"
+        except KeyboardInterrupt:
+            return
     else:
         prefer_dub = dub
 
@@ -538,8 +618,11 @@ def get(query, quality, dub, output, workers):
     console.print(f"\n[cyan]Settings:[/cyan] Quality: {quality}, Audio: {audio_label}")
 
     # Step 7: Confirm and download
-    if not Confirm.ask("\n[bold]Start download?[/bold]", default=True):
-        console.print("[yellow]Cancelled.[/yellow]")
+    try:
+        if not inquirer.confirm(message="Start download?", default=True).execute():
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+    except KeyboardInterrupt:
         return
 
     # Step 8: Parallel worker pool
@@ -569,9 +652,14 @@ def get(query, quality, dub, output, workers):
 
     console.print(
         Panel(
-            f"[green]✓ Success: {success}[/green]  [red]✗ Failed: {failed}[/red]",
-            title="Download Complete",
+            f"[bold]Anime:[/bold] {anime_name}\n"
+            f"[bold]Target:[/bold] {output}/\n\n"
+            f"[green]✓ Downloaded: {success} episode(s)[/green]\n"
+            + (f"[red]✗ Failed: {failed} episode(s)[/red]\n" if failed else "")
+            + "\n[dim]Enjoy watching![/dim]",
+            title="✨ Download Complete ✨",
             border_style="green" if failed == 0 else "yellow",
+            expand=False,
         )
     )
 
