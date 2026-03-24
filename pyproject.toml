@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shinkansen-cli"
-version = "1.0.3"
+version = "1.0.4"
 description = "Fast, reliable anime downloader for AnimePahe - built with lessons from autopahe"
 readme = "README.md"
 license = "MIT"
