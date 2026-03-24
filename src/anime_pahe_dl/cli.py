@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import nest_asyncio
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
@@ -45,6 +46,7 @@ from anime_pahe_dl.downloader import Downloader
 from anime_pahe_dl.worker_pool import WorkerPool, EpisodeTask
 
 console = Console()
+nest_asyncio.apply()
 
 
 def _check_aria2c(prompt_install: bool = False) -> bool:
@@ -179,13 +181,13 @@ def _handle_interactive_main_menu(ctx):
             choice = inquirer.select(
                 message="What would you like to do?",
                 choices=[
-                    Choice("search", name="🔍 Search & Download Anime"),
-                    Choice("library", name="📚 View Library"),
-                    Choice("history", name="🕒 View Download History"),
-                    Choice("settings", name="⚙️  Settings"),
-                    Choice("exit", name="❌ Exit"),
+                    Choice("search", name="Search & Download"),
+                    Choice("library", name="Library"),
+                    Choice("history", name="Download History"),
+                    Choice("settings", name="Settings"),
+                    Choice("exit", name="Exit"),
                 ],
-                pointer="➜",
+                pointer="›",
             ).execute()
         except KeyboardInterrupt:
             break
@@ -267,9 +269,9 @@ def _run_download_with_retries(pool, tasks, anime_name, output):
                 else ""
             )
             + "\n[dim]Enjoy watching![/dim]",
-            title="✨ Download Complete ✨",
-            border_style="green" if failed_count == 0 else "yellow",
-            expand=False,
+            title="[bold cyan] Download Complete [/bold cyan]",
+            border_style="cyan",
+            expand=True,
         )
     )
 
@@ -545,56 +547,55 @@ def history(clear):
 
 
 def _render_welcome_banner():
-    """Render a Claude-style split layout welcome banner."""
-    from rich.table import Table
+    """Render a professional, full-width welcome banner."""
     from rich.panel import Panel
     from rich.align import Align
+    from rich.text import Text
     from rich.console import Group
 
-    # A simple but impactful logo
-    ascii_art = """[bold magenta]
-    ▶
-  ██████
-  ██████
-[/bold magenta]"""
-
-    table = Table(show_header=False, box=None, padding=(0, 2), show_edge=False)
-    table.add_column("Left", justify="center", width=28)
-    table.add_column("Right", justify="left")
-
-    left = Group(
-        Align.center("\n[bold white]Welcome back![/bold white]"),
-        Align.center(ascii_art),
-        Align.center("[dim]anime-pahe-dl v1.0[/dim]"),
-        Align.center(f"[dim]~/{get_config('output_dir', 'downloads')}[/dim]"),
+    logo = (
+        "[bold cyan]"
+        "  ╔═╗ ╦ ╦ ╦ ╔╗╤ ╦╔═ ╔═╗ ╔╗╤ ╔═╗ ╔═╗ ╔╗╤\n"
+        "  ╚═╗ ╠═╣ ║ ║║║ ╠╩╗ ╠═╣ ║║║ ╚═╗ ║╣  ║║║\n"
+        "  ╚═╝ ╩ ╩ ╩ ╝╚╝ ╩ ╩ ╩ ╩ ╝╚╝ ╚═╝ ╚═╝ ╝╚╝"
+        "[/bold cyan]"
     )
+    logo_text = Text.from_markup(logo)
 
+    # Compact metadata line
+    output_dir = get_config("output_dir", "downloads")
+    meta = Text.from_markup(f"[dim]v1.0.0  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+
+    # Recent activity as a compact one-liner
     history = load_history()
-    recent = "No recent activity"
+    recent_line = Text.from_markup("[dim]No recent downloads[/dim]")
     if history:
         recent_anime = []
         for h in reversed(history):
-            if h.get("anime") and h["anime"] not in recent_anime:
-                recent_anime.append(h["anime"])
-            if len(recent_anime) >= 2:
+            name = h.get("anime")
+            if name and name not in recent_anime:
+                recent_anime.append(name)
+            if len(recent_anime) >= 3:
                 break
-        recent = "\n".join(f"• {a}" for a in recent_anime)
+        if recent_anime:
+            parts = "  ·  ".join(recent_anime)
+            recent_line = Text.from_markup(
+                f"[dim]Recent:[/dim]  [white]{parts}[/white]"
+            )
 
-    right = Group(
-        "[dim]Tips for getting started[/dim]",
-        "Run [cyan]shinkansen config show[/cyan] to overview settings",
-        "Use [cyan]arrow keys[/cyan] to elegantly navigate menus\n",
-        "[dim]Recent activity[/dim]",
-        recent,
+    content = Group(
+        Text(""),
+        Align.center(logo_text),
+        Text(""),
+        Align.center(meta),
+        Align.center(recent_line),
+        Text(""),
     )
 
-    table.add_row(left, right)
-
     return Panel(
-        table,
-        title="[bold magenta] anime-pahe-dl [/bold magenta]",
-        border_style="magenta",
-        expand=False,
+        content,
+        border_style="cyan",
+        expand=True,
     )
 
 
