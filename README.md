@@ -2,9 +2,13 @@
 
 > **A blazing-fast, fully interactive terminal application for downloading anime.**
 
+<p align="left">
+  <img src="demo.gif" alt="Shinkansen TUI Demo" width="700" height="450" >
+</p>
+
 `Shinkansen` is a powerful Terminal User Interface (TUI) that lets you search and batch-download anime directly
 from [AnimePahe](https://animepahe.si).
-It natively bypasses Cloudflare, fetches episodes in true parallel, and features an elegant interactive split-screen
+It natively bypasses Cloudflare, fetches episodes in true parallel, and features an elegant interactive full-width
 menu right in your terminal.
 
 ---

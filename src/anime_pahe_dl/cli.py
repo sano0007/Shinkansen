@@ -31,7 +31,6 @@ import json
 import logging
 import random
 import sys
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -95,27 +94,9 @@ def _fun_status(action="loading"):
     }
 
     pool = messages.get(action, messages["loading"])
-    random.shuffle(pool)
-    stop = threading.Event()
-    idx = [0]
-
-    def _rotate():
-        while not stop.is_set():
-            msg = pool[idx[0] % len(pool)]
-            status.update(f"[bold cyan]{msg}...[/bold cyan]")
-            idx[0] += 1
-            stop.wait(2.0)
-
-    status = console.status("[bold cyan]Loading...[/bold cyan]", spinner="dots")
-    status.start()
-    t = threading.Thread(target=_rotate, daemon=True)
-    t.start()
-    try:
+    msg = random.choice(pool)
+    with console.status(f"[bold cyan]{msg}...[/bold cyan]", spinner="dots"):
         yield
-    finally:
-        stop.set()
-        t.join(timeout=1)
-        status.stop()
 
 
 def _check_aria2c(prompt_install: bool = False) -> bool:
