@@ -19,8 +19,8 @@ For the absolute easiest setup across Mac/Linux/Windows, install the tool global
 using [pipx](https://pipx.pypa.io/) (the modern standard for Python CLIs):
 
 ```bash
-# Safely install globally and set up the Chromium headless browser in one go!
-pipx install git+https://github.com/sano0007/Shinkansen.git && shinkansen setup
+# Safely install globally using the official PyPI release (Zero Configuration!)
+pipx install shinkansen-cli
 ```
 
 ## ⚙️ Manual Installation (For Development)
@@ -28,11 +28,10 @@ pipx install git+https://github.com/sano0007/Shinkansen.git && shinkansen setup
 If you are cloning the repository directly instead of using the 1-command install:
 ```bash
 git clone https://github.com/sano0007/Shinkansen.git
-cd anime-pahe-dl
+cd Shinkansen
 pip install -e .
 
-# Install Playwright browser dependencies (required exactly once)
-shinkansen setup
+# Note: The embedded auto-installer will automatically secure Playwright on first run!
 ```
 
 ## 🎮 Usage
