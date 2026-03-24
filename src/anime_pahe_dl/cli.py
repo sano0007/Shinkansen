@@ -26,14 +26,18 @@ Improvements:
 """
 
 import atexit
+import contextlib
 import json
 import logging
+import random
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 import click
+import nest_asyncio
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm
@@ -45,6 +49,73 @@ from anime_pahe_dl.downloader import Downloader
 from anime_pahe_dl.worker_pool import WorkerPool, EpisodeTask
 
 console = Console()
+nest_asyncio.apply()
+
+
+@contextlib.contextmanager
+def _fun_status(action="loading"):
+    """Context manager that cycles through fun messages while work happens."""
+    messages = {
+        "search": [
+            "Searching the anime multiverse",
+            "Scanning AnimePahe servers",
+            "Summoning search results",
+            "Consulting the anime gods",
+            "Cooking up results",
+            "No cap, searching fr fr",
+            "This search is about to be bussin",
+        ],
+        "episodes": [
+            "Fetching episode list",
+            "Counting episodes",
+            "Loading the episode archive",
+            "Unpacking the season",
+            "Brewing episode data",
+            "Slay, grabbing that episode data",
+            "Lowkey fetching all the eps",
+        ],
+        "sources": [
+            "Resolving download sources",
+            "Cracking the download links",
+            "Decoding stream URLs",
+            "Extracting the good stuff",
+            "These links are giving main character energy",
+            "Fr fr finding the best source",
+            "No cap, extracting the vibes",
+        ],
+        "loading": [
+            "Loading",
+            "Working on it",
+            "Crunching data",
+            "Almost there",
+            "Warming up",
+            "Lowkey cooking rn",
+            "It's giving progress",
+        ],
+    }
+
+    pool = messages.get(action, messages["loading"])
+    random.shuffle(pool)
+    stop = threading.Event()
+    idx = [0]
+
+    def _rotate():
+        while not stop.is_set():
+            msg = pool[idx[0] % len(pool)]
+            status.update(f"[bold cyan]{msg}...[/bold cyan]")
+            idx[0] += 1
+            stop.wait(2.0)
+
+    status = console.status("[bold cyan]Loading...[/bold cyan]", spinner="dots")
+    status.start()
+    t = threading.Thread(target=_rotate, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=1)
+        status.stop()
 
 
 def _check_aria2c(prompt_install: bool = False) -> bool:
@@ -179,13 +250,13 @@ def _handle_interactive_main_menu(ctx):
             choice = inquirer.select(
                 message="What would you like to do?",
                 choices=[
-                    Choice("search", name="🔍 Search & Download Anime"),
-                    Choice("library", name="📚 View Library"),
-                    Choice("history", name="🕒 View Download History"),
-                    Choice("settings", name="⚙️  Settings"),
-                    Choice("exit", name="❌ Exit"),
+                    Choice("search", name="Search & Download"),
+                    Choice("library", name="Library"),
+                    Choice("history", name="Download History"),
+                    Choice("settings", name="Settings"),
+                    Choice("exit", name="Exit"),
                 ],
-                pointer="➜",
+                pointer="›",
             ).execute()
         except KeyboardInterrupt:
             break
@@ -267,9 +338,9 @@ def _run_download_with_retries(pool, tasks, anime_name, output):
                 else ""
             )
             + "\n[dim]Enjoy watching![/dim]",
-            title="✨ Download Complete ✨",
-            border_style="green" if failed_count == 0 else "yellow",
-            expand=False,
+            title="[bold cyan] Download Complete [/bold cyan]",
+            border_style="cyan",
+            expand=True,
         )
     )
 
@@ -297,7 +368,7 @@ def search(query):
     """Search for anime by name."""
     client = get_client()
 
-    with console.status("[bold cyan]Searching...", spinner="dots"):
+    with _fun_status("search"):
         results = client.search(query)
 
     if not results:
@@ -339,7 +410,7 @@ def episodes(session, page):
     client = get_client()
 
     if page > 0:
-        with console.status("[bold cyan]Fetching episodes...", spinner="dots"):
+        with _fun_status("episodes"):
             data = client.get_episode_page(session, page)
         if not data or "data" not in data:
             console.print("[red]No episodes found.[/red]")
@@ -356,7 +427,7 @@ def episodes(session, page):
             filler = " [dim red](filler)[/dim red]" if ep.get("filler") else ""
             console.print(f"  Ep {num:>4}{filler}  [dim]{ep_session}[/dim]")
     else:
-        with console.status("[bold cyan]Fetching all episodes...", spinner="dots"):
+        with _fun_status("episodes"):
             eps = client.get_episodes(session)
 
         if not eps:
@@ -376,14 +447,14 @@ def sources(session, episode_num):
     """Show available download sources for an episode."""
     client = get_client()
 
-    with console.status("[bold cyan]Getting episode info...", spinner="dots"):
+    with _fun_status("episodes"):
         ep_session = client.get_episode_session(session, episode_num)
 
     if not ep_session:
         console.print(f"[red]Episode {episode_num} not found.[/red]")
         return
 
-    with console.status("[bold cyan]Getting sources...", spinner="dots"):
+    with _fun_status("sources"):
         srcs = client.get_sources(session, ep_session)
 
     if not srcs:
@@ -433,7 +504,7 @@ def download(
 
     # Determine which episodes to download
     # Fetch all episodes upfront for the session map (avoids per-episode API calls)
-    with console.status("[bold cyan]Fetching episode list...", spinner="dots"):
+    with _fun_status("episodes"):
         eps = client.get_episodes(session)
 
     ep_session_map = {ep.number: ep.session for ep in eps}
@@ -545,56 +616,55 @@ def history(clear):
 
 
 def _render_welcome_banner():
-    """Render a Claude-style split layout welcome banner."""
-    from rich.table import Table
+    """Render a professional, full-width welcome banner."""
     from rich.panel import Panel
     from rich.align import Align
+    from rich.text import Text
     from rich.console import Group
 
-    # A simple but impactful logo
-    ascii_art = """[bold magenta]
-    ▶
-  ██████
-  ██████
-[/bold magenta]"""
-
-    table = Table(show_header=False, box=None, padding=(0, 2), show_edge=False)
-    table.add_column("Left", justify="center", width=28)
-    table.add_column("Right", justify="left")
-
-    left = Group(
-        Align.center("\n[bold white]Welcome back![/bold white]"),
-        Align.center(ascii_art),
-        Align.center("[dim]anime-pahe-dl v1.0[/dim]"),
-        Align.center(f"[dim]~/{get_config('output_dir', 'downloads')}[/dim]"),
+    logo = (
+        "[bold cyan]"
+        "  ╔═╗ ╦ ╦ ╦ ╔╗╤ ╦╔═ ╔═╗ ╔╗╤ ╔═╗ ╔═╗ ╔╗╤\n"
+        "  ╚═╗ ╠═╣ ║ ║║║ ╠╩╗ ╠═╣ ║║║ ╚═╗ ║╣  ║║║\n"
+        "  ╚═╝ ╩ ╩ ╩ ╝╚╝ ╩ ╩ ╩ ╩ ╝╚╝ ╚═╝ ╚═╝ ╝╚╝"
+        "[/bold cyan]"
     )
+    logo_text = Text.from_markup(logo)
 
+    # Compact metadata line
+    output_dir = get_config("output_dir", "downloads")
+    meta = Text.from_markup(f"[dim]v1.0.0  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+
+    # Recent activity as a compact one-liner
     history = load_history()
-    recent = "No recent activity"
+    recent_line = Text.from_markup("[dim]No recent downloads[/dim]")
     if history:
         recent_anime = []
         for h in reversed(history):
-            if h.get("anime") and h["anime"] not in recent_anime:
-                recent_anime.append(h["anime"])
-            if len(recent_anime) >= 2:
+            name = h.get("anime")
+            if name and name not in recent_anime:
+                recent_anime.append(name)
+            if len(recent_anime) >= 3:
                 break
-        recent = "\n".join(f"• {a}" for a in recent_anime)
+        if recent_anime:
+            parts = "  ·  ".join(recent_anime)
+            recent_line = Text.from_markup(
+                f"[dim]Recent:[/dim]  [white]{parts}[/white]"
+            )
 
-    right = Group(
-        "[dim]Tips for getting started[/dim]",
-        "Run [cyan]shinkansen config show[/cyan] to overview settings",
-        "Use [cyan]arrow keys[/cyan] to elegantly navigate menus\n",
-        "[dim]Recent activity[/dim]",
-        recent,
+    content = Group(
+        Text(""),
+        Align.center(logo_text),
+        Text(""),
+        Align.center(meta),
+        Align.center(recent_line),
+        Text(""),
     )
 
-    table.add_row(left, right)
-
     return Panel(
-        table,
-        title="[bold magenta] anime-pahe-dl [/bold magenta]",
-        border_style="magenta",
-        expand=False,
+        content,
+        border_style="cyan",
+        expand=True,
     )
 
 
@@ -628,7 +698,7 @@ def get(query, quality, dub, output, workers):
     _print_banner_once()
 
     # Step 1: Search
-    with console.status("[bold cyan]Searching...", spinner="dots"):
+    with _fun_status("search"):
         results = client.search(query)
 
     if not results:
@@ -663,7 +733,7 @@ def get(query, quality, dub, output, workers):
     console.print(f"\n[green]Selected:[/green] {anime_name}")
 
     # Step 3: Get episodes
-    with console.status("[bold cyan]Fetching episodes...", spinner="dots"):
+    with _fun_status("episodes"):
         eps = client.get_episodes(session)
 
     if not eps:
