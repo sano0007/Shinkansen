@@ -493,7 +493,13 @@ def download(
     if episode:
         ep_numbers = [episode]
     elif ep_range:
-        ep_numbers = parse_range(ep_range)
+        try:
+            ep_numbers = parse_range(ep_range)
+        except ValueError:
+            console.print(
+                "[red]✗ Invalid episodes format![/red] Use '-e 1-5' or '-e 1,3,5' or '-e all'"
+            )
+            return
     elif download_all:
         ep_numbers = [ep.number for ep in eps]
         console.print(f"[bold]Will download {len(ep_numbers)} episodes[/bold]")
@@ -614,7 +620,7 @@ def _render_welcome_banner():
 
     # Compact metadata line
     output_dir = get_config("output_dir", "downloads")
-    meta = Text.from_markup(f"[dim]v1.0.1  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+    meta = Text.from_markup(f"[dim]v1.0.2  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
 
     # Recent activity as a compact one-liner
     history = load_history()
@@ -725,11 +731,22 @@ def get(query, quality, dub, output, workers):
 
     ep_session_map = {ep.number: ep.session for ep in eps}
 
+    def validate_eps(result: str) -> bool:
+        if result.lower() == "all":
+            return True
+        try:
+            parse_range(result)
+            return True
+        except ValueError:
+            return False
+
     # Step 4: Select episodes
     try:
         ep_choices = inquirer.text(
             message="Episodes to download (e.g., 1-5, 1,3,5 or 'all'):",
             default="all",
+            validate=validate_eps,
+            invalid_message="Invalid format! Use ranges (1-5) or commas (1,3,5)",
         ).execute()
     except KeyboardInterrupt:
         return
@@ -737,7 +754,13 @@ def get(query, quality, dub, output, workers):
     if ep_choices.lower() == "all":
         ep_numbers = [ep.number for ep in eps]
     else:
-        ep_numbers = parse_range(ep_choices)
+        try:
+            ep_numbers = parse_range(ep_choices)
+        except ValueError:
+            console.print(
+                "[red]✗ Invalid episodes format![/red] Use numbers like '1-5', '1,3,5', or 'all'"
+            )
+            return
 
     console.print(f"\n[cyan]Will download:[/cyan] episodes {ep_numbers}")
 

@@ -310,11 +310,56 @@ class AnimePaheClient:
         if self._pw_context is not None:
             return
 
-        from playwright.sync_api import sync_playwright
+        from playwright.sync_api import sync_playwright, Error as PlaywrightError
 
         logger.info("Starting Playwright browser...")
         self._pw = sync_playwright().start()
-        browser = self._pw.chromium.launch(headless=True)
+
+        try:
+            browser = self._pw.chromium.launch(headless=True)
+        except PlaywrightError as e:
+            if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
+                import subprocess
+                import sys
+                from rich.console import Console
+
+                # Use a clean status spinner for the background playwright install
+                with Console().status(
+                    "[bold cyan]Downloading Chromium browser engine (first run only)...[/bold cyan]",
+                    spinner="dots",
+                ):
+                    try:
+                        subprocess.run(
+                            [sys.executable, "-m", "playwright", "install", "chromium"],
+                            check=True,
+                            capture_output=True,
+                        )
+                    except subprocess.CalledProcessError:
+                        Console().print(
+                            "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
+                        )
+                        raise e
+
+                # Retry launch now that it's installed
+                browser = self._pw.chromium.launch(headless=True)
+            elif "error while loading shared libraries" in str(
+                e
+            ) or "cannot open shared object file" in str(e):
+                from rich.console import Console
+
+                Console().print(
+                    "\n[red]✗ Your system is missing OS-level libraries required by Playwright (e.g., libgbm, libnss3).[/red]"
+                )
+                Console().print(
+                    "[yellow]Please run the following command to install them (usually requires sudo root):[/yellow]"
+                )
+                Console().print(
+                    "    [bold cyan]python -m playwright install-deps chromium[/bold cyan]\n"
+                )
+                raise SystemExit(1)
+            else:
+                raise
+
         self._pw_context = browser.new_context(
             user_agent=HEADERS["User-Agent"],
         )
