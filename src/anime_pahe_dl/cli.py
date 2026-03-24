@@ -633,7 +633,7 @@ def _render_welcome_banner():
 
     # Compact metadata line
     output_dir = get_config("output_dir", "downloads")
-    meta = Text.from_markup(f"[dim]v1.0.0  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+    meta = Text.from_markup(f"[dim]v1.0.1  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
 
     # Recent activity as a compact one-liner
     history = load_history()
