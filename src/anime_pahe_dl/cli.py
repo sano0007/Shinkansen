@@ -54,6 +54,9 @@ nest_asyncio.apply()
 @contextlib.contextmanager
 def _fun_status(action="loading"):
     """Context manager that cycles through fun messages while work happens."""
+    import threading
+    import itertools
+
     messages = {
         "search": [
             "Searching the anime multiverse",
@@ -94,9 +97,26 @@ def _fun_status(action="loading"):
     }
 
     pool = messages.get(action, messages["loading"])
-    msg = random.choice(pool)
-    with console.status(f"[bold cyan]{msg}...[/bold cyan]", spinner="dots"):
-        yield
+    # Shuffle for variety
+    random.shuffle(pool)
+    it = itertools.cycle(pool)
+
+    stop_event = threading.Event()
+
+    def rotate_status(status_obj):
+        while not stop_event.wait(4.0):
+            msg = next(it)
+            status_obj.update(f"[bold cyan]{msg}...[/bold cyan]")
+
+    with console.status(
+        f"[bold cyan]{next(it)}...[/bold cyan]", spinner="dots"
+    ) as status:
+        rotator = threading.Thread(target=rotate_status, args=(status,), daemon=True)
+        rotator.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
 
 
 def _check_aria2c(prompt_install: bool = False) -> bool:
@@ -246,14 +266,28 @@ def _handle_interactive_main_menu(ctx):
             try:
                 query = inquirer.text(message="Search query:").execute()
                 if query.strip():
-                    ctx.invoke(
-                        get,
-                        query=query.strip(),
-                        quality=None,
-                        dub=None,
-                        output="downloads",
-                        workers=None,
-                    )
+                    import threading
+
+                    _exc = []
+
+                    def _run_in_clean_thread():
+                        try:
+                            ctx.invoke(
+                                get,
+                                query=query.strip(),
+                                quality=None,
+                                dub=None,
+                                output="downloads",
+                                workers=None,
+                            )
+                        except Exception as e:
+                            _exc.append(e)
+
+                    t = threading.Thread(target=_run_in_clean_thread)
+                    t.start()
+                    t.join()
+                    if _exc:
+                        raise _exc[0]
             except KeyboardInterrupt:
                 pass
         elif choice == "library":
@@ -280,14 +314,21 @@ def _handle_interactive_main_menu(ctx):
 
 def _run_download_with_retries(pool, tasks, anime_name, output):
     """Helper to run the pool and recursively prompt for failed episode retries."""
-    total_success = 0
+    completed_numbers = set()
     current_tasks = tasks
 
     while current_tasks:
-        success, failed_tasks = pool.run(current_tasks)
-        total_success += success
+        success_count, failed_tasks = pool.run(current_tasks)
+
+        # Track which episodes actually finished successfully in THIS run
+        # We assume any task NOT in failed_tasks was a success
+        failed_nums = {t.ep_num for t in failed_tasks}
+        for task in current_tasks:
+            if task.ep_num not in failed_nums:
+                completed_numbers.add(task.ep_num)
 
         if not failed_tasks:
+            current_tasks = []
             break
 
         from InquirerPy import inquirer
@@ -300,13 +341,12 @@ def _run_download_with_retries(pool, tasks, anime_name, output):
         except KeyboardInterrupt:
             retry = False
 
+        current_tasks = failed_tasks
         if not retry:
-            current_tasks = failed_tasks
             break
 
-        current_tasks = failed_tasks
-
-    failed_count = len(current_tasks) if current_tasks else 0
+    total_success = len(completed_numbers)
+    failed_count = len(current_tasks)
 
     console.print(
         Panel(
@@ -620,7 +660,7 @@ def _render_welcome_banner():
 
     # Compact metadata line
     output_dir = get_config("output_dir", "downloads")
-    meta = Text.from_markup(f"[dim]v1.0.2  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+    meta = Text.from_markup(f"[dim]v1.0.3  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
 
     # Recent activity as a compact one-liner
     history = load_history()
@@ -689,7 +729,10 @@ def get(query, quality, dub, output, workers):
         results = client.search(query)
 
     if not results:
-        console.print("[red]No results found.[/red]")
+        console.print("\n[yellow]✗ No anime found matching that name.[/yellow]")
+        import time
+
+        time.sleep(2)
         return
 
     # Step 2: Select anime

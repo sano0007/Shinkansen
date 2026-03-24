@@ -74,16 +74,19 @@ def _download_requests(
             total = int(resp.headers.get("content-length", 0)) + existing_size
             mode = "ab" if existing_size else "wb"
 
-            with open(output_path, mode) as f, tqdm.tqdm(
-                total=total,
-                initial=existing_size,
-                unit="B",
-                unit_scale=True,
-                desc=episode_label or output_path.name,
-                ncols=80,
-                unit_divisor=1024,
-                disable=quiet,
-            ) as bar:
+            with (
+                open(output_path, mode) as f,
+                tqdm.tqdm(
+                    total=total,
+                    initial=existing_size,
+                    unit="B",
+                    unit_scale=True,
+                    desc=episode_label or output_path.name,
+                    ncols=80,
+                    unit_divisor=1024,
+                    disable=quiet,
+                ) as bar,
+            ):
                 for chunk in resp.iter_content(chunk_size=1024 * 256):
                     if chunk:
                         f.write(chunk)
