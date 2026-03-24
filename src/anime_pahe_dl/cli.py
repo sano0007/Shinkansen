@@ -808,6 +808,28 @@ def get(query, quality, dub, output, workers):
             )
             return
 
+    # Validate that at least some requested episodes exist
+    available_eps = set(ep_session_map.keys())
+    valid_eps = [ep for ep in ep_numbers if ep in available_eps]
+
+    if not valid_eps:
+        min_ep = min(available_eps) if available_eps else 0
+        max_ep = max(available_eps) if available_eps else 0
+        console.print(
+            f"\n[red]✗ None of requested episodes {ep_numbers} are available.[/red]"
+        )
+        console.print(
+            f"[yellow]  This anime's available episodes are: {min_ep} to {max_ep}[/yellow]"
+        )
+        return
+
+    if len(valid_eps) < len(ep_numbers):
+        missing = sorted(list(set(ep_numbers) - set(valid_eps)))
+        console.print(
+            f"\n[yellow]⚠ Warning: Episodes {missing} are not available and will be skipped.[/yellow]"
+        )
+        ep_numbers = valid_eps
+
     console.print(f"\n[cyan]Will download:[/cyan] episodes {ep_numbers}")
 
     # Step 5: Select quality (if not provided)

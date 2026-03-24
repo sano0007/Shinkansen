@@ -85,6 +85,7 @@ class ProgressTracker:
         self.download_status: dict[int, str] = {}
         self._spinners: dict[int, Spinner] = {}
         self.completed = 0
+        self.completed_eps: set[int] = set()
         self.failed = 0
         self.failed_eps: set[int] = set()
         self.skipped = 0
@@ -111,9 +112,11 @@ class ProgressTracker:
         with self._lock:
             self.download_status.pop(ep_num, None)
 
-    def add_completed(self):
+    def add_completed(self, ep_num: int = -1):
         with self._lock:
             self.completed += 1
+            if ep_num != -1:
+                self.completed_eps.add(ep_num)
 
     def add_failed(self, ep_num: int = -1):
         with self._lock:
@@ -216,7 +219,10 @@ class PrepareWorker(threading.Thread):
             self._init_playwright()
             self._process_loop()
         except Exception as e:
-            logger.error(f"Worker {self._id} crashed: {e}")
+            logger.critical(f"Worker {self._id} CRITICAL CRASH: {e}", exc_info=True)
+            self._tracker.set_worker(
+                self._id, f"[red]CRASHED: {type(e).__name__}[/red]"
+            )
         finally:
             self._cleanup()
             self._tracker.clear_worker(self._id)
@@ -420,8 +426,9 @@ class WorkerPool:
                 except (ValueError, OSError):
                     pass
 
-        failed_tasks = [t for t in tasks if t.ep_num in self._tracker.failed_eps]
-        return self._tracker.completed + self._tracker.skipped, failed_tasks
+        # Success counts (completed + skipped)
+        failed_tasks = [t for t in tasks if t.ep_num not in self._tracker.completed_eps]
+        return len(self._tracker.completed_eps) + self._tracker.skipped, failed_tasks
 
     def _download_coordinator(self, num_active: int, anime_name: str, quality: str):
         """Consume prepared results and dispatch downloads."""
@@ -460,7 +467,7 @@ class WorkerPool:
                     try:
                         path = f.result()
                         if path:
-                            self._tracker.add_completed()
+                            self._tracker.add_completed(res.ep_num)
                             self._tracker.clear_download(res.ep_num)
                             if self._on_complete:
                                 self._on_complete(res.ep_num, res.source.quality, path)
@@ -479,7 +486,7 @@ class WorkerPool:
                 try:
                     path = future.result()
                     if path:
-                        self._tracker.add_completed()
+                        self._tracker.add_completed(res.ep_num)
                         if self._on_complete:
                             self._on_complete(res.ep_num, res.source.quality, path)
                     else:

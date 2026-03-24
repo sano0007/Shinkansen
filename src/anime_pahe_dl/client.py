@@ -342,12 +342,12 @@ class AnimePaheClient:
                     console.print(
                         "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
                     )
-                    raise SystemExit(1)
+                    raise RuntimeError("Playwright installation failed")
                 except Exception as e:
                     console.print(
                         f"\n[red]✗ An unexpected error occurred during setup: {e}[/red]"
                     )
-                    raise SystemExit(1)
+                    raise
 
                 # Retry launch now that it's installed
                 browser = self._pw.chromium.launch(headless=True)
@@ -365,7 +365,7 @@ class AnimePaheClient:
                 Console().print(
                     "    [bold cyan]python -m playwright install-deps chromium[/bold cyan]\n"
                 )
-                raise SystemExit(1)
+                raise RuntimeError("Missing OS libraries required by Playwright")
             else:
                 raise
 
