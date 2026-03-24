@@ -270,7 +270,7 @@ class TestCliDownload:
             sources=[Source(url="https://pahe.win/a", quality="720p", audio="jpn")],
         )
         mock_pool = MagicMock()
-        mock_pool.run.return_value = (1, 0)
+        mock_pool.run.return_value = (1, [])
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
             with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
@@ -296,7 +296,7 @@ class TestCliDownload:
             sources=[Source(url="https://pahe.win/a", quality="720p", audio="jpn")],
         )
         mock_pool = MagicMock()
-        mock_pool.run.return_value = (3, 0)
+        mock_pool.run.return_value = (3, [])
 
         with patch("anime_pahe_dl.cli.get_client", return_value=mock_client):
             with patch("anime_pahe_dl.cli.WorkerPool", return_value=mock_pool):
