@@ -315,59 +315,71 @@ class AnimePaheClient:
         logger.info("Starting Playwright browser...")
         self._pw = sync_playwright().start()
 
-        try:
-            browser = self._pw.chromium.launch(headless=True)
-        except PlaywrightError as e:
-            if "Executable doesn't exist" in str(e) or "playwright install" in str(e):
-                import subprocess
-                import sys
-                from rich.console import Console
-
-                # Don't capture output! We need the user to see the Playwright progress bar
-                # so they know it's not actually hanging on a 100MB download.
-                console = Console()
-                console.print(
-                    "\n[bold cyan]Playwright Chromium browser not found. Starting one-time setup...[/bold cyan]"
-                )
-                try:
-                    subprocess.run(
-                        [sys.executable, "-m", "playwright", "install", "chromium"],
-                        check=True,
-                        capture_output=False,
-                    )
-                    console.print(
-                        "[green]✓ Browser engine installed successfully![/green]\n"
-                    )
-                except subprocess.CalledProcessError:
-                    console.print(
-                        "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
-                    )
-                    raise SystemExit(1)
-                except Exception as e:
-                    console.print(
-                        f"\n[red]✗ An unexpected error occurred during setup: {e}[/red]"
-                    )
-                    raise SystemExit(1)
-
-                # Retry launch now that it's installed
+        # Try to use existing system browsers first to avoid the 170MB download!
+        # Windows almost always has Edge, and many have Chrome/Brave.
+        for channel in ["chrome", "msedge", "chromium"]:
+            try:
+                browser = self._pw.chromium.launch(headless=True, channel=channel)
+                logger.debug(f"Launched Playwright with channel: {channel}")
+                break
+            except PlaywrightError:
+                continue
+        else:
+            # No system browser found, or it's too old.
+            # Fall back to the manual download with a visible progress bar.
+            try:
                 browser = self._pw.chromium.launch(headless=True)
-            elif "error while loading shared libraries" in str(
-                e
-            ) or "cannot open shared object file" in str(e):
-                from rich.console import Console
+            except PlaywrightError as e:
+                if "Executable doesn't exist" in str(e) or "playwright install" in str(
+                    e
+                ):
+                    import subprocess
+                    import sys
+                    from rich.console import Console
 
-                Console().print(
-                    "\n[red]✗ Your system is missing OS-level libraries required by Playwright (e.g., libgbm, libnss3).[/red]"
-                )
-                Console().print(
-                    "[yellow]Please run the following command to install them (usually requires sudo root):[/yellow]"
-                )
-                Console().print(
-                    "    [bold cyan]python -m playwright install-deps chromium[/bold cyan]\n"
-                )
-                raise SystemExit(1)
-            else:
-                raise
+                    # Don't capture output! We need the user to see the Playwright progress bar
+                    # so they know it's not actually hanging on a 100MB download.
+                    console = Console()
+                    console.print(
+                        "\n[bold cyan]Playwright Chromium browser not found. Starting one-time setup...[/bold cyan]"
+                    )
+                    try:
+                        subprocess.run(
+                            [sys.executable, "-m", "playwright", "install", "chromium"],
+                            check=True,
+                            capture_output=False,
+                        )
+                        console.print(
+                            "[green]✓ Browser engine installed successfully![/green]\n"
+                        )
+                    except subprocess.CalledProcessError:
+                        console.print(
+                            "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
+                        )
+                        raise SystemExit(1)
+                    except Exception as e:
+                        console.print(
+                            f"\n[red]✗ An unexpected error occurred during setup: {e}[/red]"
+                        )
+                        raise SystemExit(1)
+
+                    # Retry launch now that it's installed
+                    browser = self._pw.chromium.launch(headless=True)
+                elif "error while loading shared libraries" in str(
+                    e
+                ) or "cannot open shared object file" in str(e):
+                    from rich.console import Console
+
+                    Console().print(
+                        "\n[red]✗ Your system is missing OS-level libraries required by Playwright (e.g., libgbm, libnss3).[/red]"
+                    )
+                    Console().print(
+                        "[yellow]Please run the following command to install them (usually requires sudo root):[/yellow]"
+                    )
+                    Console().print("[bold]playwright install-deps chromium[/bold]\n")
+                    raise SystemExit(1)
+                else:
+                    raise e
 
         self._pw_context = browser.new_context(
             user_agent=HEADERS["User-Agent"],
