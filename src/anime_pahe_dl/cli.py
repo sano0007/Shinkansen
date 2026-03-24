@@ -26,9 +26,12 @@ Improvements:
 """
 
 import atexit
+import contextlib
 import json
 import logging
+import random
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -47,6 +50,72 @@ from anime_pahe_dl.worker_pool import WorkerPool, EpisodeTask
 
 console = Console()
 nest_asyncio.apply()
+
+
+@contextlib.contextmanager
+def _fun_status(action="loading"):
+    """Context manager that cycles through fun messages while work happens."""
+    messages = {
+        "search": [
+            "Searching the anime multiverse",
+            "Scanning AnimePahe servers",
+            "Summoning search results",
+            "Consulting the anime gods",
+            "Cooking up results",
+            "No cap, searching fr fr",
+            "This search is about to be bussin",
+        ],
+        "episodes": [
+            "Fetching episode list",
+            "Counting episodes",
+            "Loading the episode archive",
+            "Unpacking the season",
+            "Brewing episode data",
+            "Slay, grabbing that episode data",
+            "Lowkey fetching all the eps",
+        ],
+        "sources": [
+            "Resolving download sources",
+            "Cracking the download links",
+            "Decoding stream URLs",
+            "Extracting the good stuff",
+            "These links are giving main character energy",
+            "Fr fr finding the best source",
+            "No cap, extracting the vibes",
+        ],
+        "loading": [
+            "Loading",
+            "Working on it",
+            "Crunching data",
+            "Almost there",
+            "Warming up",
+            "Lowkey cooking rn",
+            "It's giving progress",
+        ],
+    }
+
+    pool = messages.get(action, messages["loading"])
+    random.shuffle(pool)
+    stop = threading.Event()
+    idx = [0]
+
+    def _rotate():
+        while not stop.is_set():
+            msg = pool[idx[0] % len(pool)]
+            status.update(f"[bold cyan]{msg}...[/bold cyan]")
+            idx[0] += 1
+            stop.wait(2.0)
+
+    status = console.status("[bold cyan]Loading...[/bold cyan]", spinner="dots")
+    status.start()
+    t = threading.Thread(target=_rotate, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        t.join(timeout=1)
+        status.stop()
 
 
 def _check_aria2c(prompt_install: bool = False) -> bool:
@@ -299,7 +368,7 @@ def search(query):
     """Search for anime by name."""
     client = get_client()
 
-    with console.status("[bold cyan]Searching...", spinner="dots"):
+    with _fun_status("search"):
         results = client.search(query)
 
     if not results:
@@ -341,7 +410,7 @@ def episodes(session, page):
     client = get_client()
 
     if page > 0:
-        with console.status("[bold cyan]Fetching episodes...", spinner="dots"):
+        with _fun_status("episodes"):
             data = client.get_episode_page(session, page)
         if not data or "data" not in data:
             console.print("[red]No episodes found.[/red]")
@@ -358,7 +427,7 @@ def episodes(session, page):
             filler = " [dim red](filler)[/dim red]" if ep.get("filler") else ""
             console.print(f"  Ep {num:>4}{filler}  [dim]{ep_session}[/dim]")
     else:
-        with console.status("[bold cyan]Fetching all episodes...", spinner="dots"):
+        with _fun_status("episodes"):
             eps = client.get_episodes(session)
 
         if not eps:
@@ -378,14 +447,14 @@ def sources(session, episode_num):
     """Show available download sources for an episode."""
     client = get_client()
 
-    with console.status("[bold cyan]Getting episode info...", spinner="dots"):
+    with _fun_status("episodes"):
         ep_session = client.get_episode_session(session, episode_num)
 
     if not ep_session:
         console.print(f"[red]Episode {episode_num} not found.[/red]")
         return
 
-    with console.status("[bold cyan]Getting sources...", spinner="dots"):
+    with _fun_status("sources"):
         srcs = client.get_sources(session, ep_session)
 
     if not srcs:
@@ -435,7 +504,7 @@ def download(
 
     # Determine which episodes to download
     # Fetch all episodes upfront for the session map (avoids per-episode API calls)
-    with console.status("[bold cyan]Fetching episode list...", spinner="dots"):
+    with _fun_status("episodes"):
         eps = client.get_episodes(session)
 
     ep_session_map = {ep.number: ep.session for ep in eps}
@@ -629,7 +698,7 @@ def get(query, quality, dub, output, workers):
     _print_banner_once()
 
     # Step 1: Search
-    with console.status("[bold cyan]Searching...", spinner="dots"):
+    with _fun_status("search"):
         results = client.search(query)
 
     if not results:
@@ -664,7 +733,7 @@ def get(query, quality, dub, output, workers):
     console.print(f"\n[green]Selected:[/green] {anime_name}")
 
     # Step 3: Get episodes
-    with console.status("[bold cyan]Fetching episodes...", spinner="dots"):
+    with _fun_status("episodes"):
         eps = client.get_episodes(session)
 
     if not eps:
