@@ -1,14 +1,14 @@
-# Contributing to anime-pahe-dl
+# Contributing to Shinkansen
 
-First off, thank you for considering contributing to `anime-pahe-dl`! It's people like you that make open source such a
+First off, thank you for considering contributing to `Shinkansen`! It's people like you that make open source such a
 great community.
 
 ## Development Setup
 
 1. **Fork and clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/anime-pahe-dl.git
-   cd anime-pahe-dl
+   git clone https://github.com/sano0007/Shinkansen.git
+   cd Shinkansen
    ```
 
 2. **Set up a virtual environment (recommended):**
