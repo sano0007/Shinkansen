@@ -388,6 +388,7 @@ def cli(ctx, verbose):
 def search(query):
     """Search for anime by name."""
     client = get_client()
+    client._ensure_playwright()
 
     with _fun_status("search"):
         results = client.search(query)
@@ -660,7 +661,7 @@ def _render_welcome_banner():
 
     # Compact metadata line
     output_dir = get_config("output_dir", "downloads")
-    meta = Text.from_markup(f"[dim]v1.0.4  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
+    meta = Text.from_markup(f"[dim]v1.0.5  ·  AnimePahe  ·  ~/{output_dir}[/dim]")
 
     # Recent activity as a compact one-liner
     history = load_history()
@@ -723,6 +724,8 @@ def get(query, quality, dub, output, workers):
     client = get_client()
 
     _print_banner_once()
+
+    client._ensure_playwright()
 
     # Step 1: Search
     with _fun_status("search"):

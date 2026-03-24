@@ -323,22 +323,31 @@ class AnimePaheClient:
                 import sys
                 from rich.console import Console
 
-                # Use a clean status spinner for the background playwright install
-                with Console().status(
-                    "[bold cyan]Downloading Chromium browser engine (first run only)...[/bold cyan]",
-                    spinner="dots",
-                ):
-                    try:
-                        subprocess.run(
-                            [sys.executable, "-m", "playwright", "install", "chromium"],
-                            check=True,
-                            capture_output=True,
-                        )
-                    except subprocess.CalledProcessError:
-                        Console().print(
-                            "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
-                        )
-                        raise e
+                # Don't capture output! We need the user to see the Playwright progress bar
+                # so they know it's not actually hanging on a 100MB download.
+                console = Console()
+                console.print(
+                    "\n[bold cyan]Playwright Chromium browser not found. Starting one-time setup...[/bold cyan]"
+                )
+                try:
+                    subprocess.run(
+                        [sys.executable, "-m", "playwright", "install", "chromium"],
+                        check=True,
+                        capture_output=False,
+                    )
+                    console.print(
+                        "[green]✓ Browser engine installed successfully![/green]\n"
+                    )
+                except subprocess.CalledProcessError:
+                    console.print(
+                        "\n[red]✗ Failed to automatically install Playwright browsers. Please run:[/red] [bold]playwright install chromium[/bold]"
+                    )
+                    raise SystemExit(1)
+                except Exception as e:
+                    console.print(
+                        f"\n[red]✗ An unexpected error occurred during setup: {e}[/red]"
+                    )
+                    raise SystemExit(1)
 
                 # Retry launch now that it's installed
                 browser = self._pw.chromium.launch(headless=True)
