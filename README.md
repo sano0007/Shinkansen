@@ -13,7 +13,7 @@ menu right in your terminal.
 
 ---
 
-## 🚀 Quick Start (1-Command Install)
+## Quick Start (1-Command Install)
 
 For the absolute easiest setup across Mac/Linux/Windows, install the tool globally in its own isolated environment
 using [pipx](https://pipx.pypa.io/) (the modern standard for Python CLIs):
@@ -21,17 +21,6 @@ using [pipx](https://pipx.pypa.io/) (the modern standard for Python CLIs):
 ```bash
 # Safely install globally using the official PyPI release (Zero Configuration!)
 pipx install shinkansen-cli
-```
-
-## ⚙️ Manual Installation (For Development)
-
-If you are cloning the repository directly instead of using the 1-command install:
-```bash
-git clone https://github.com/sano0007/Shinkansen.git
-cd Shinkansen
-pip install -e .
-
-# Note: The embedded auto-installer will automatically secure Playwright on first run!
 ```
 
 ## 🎮 Usage
@@ -46,6 +35,21 @@ shinkansen
 This launches a beautiful, dynamically-rendered menu offering Search & Download, Library browsing, History tracking, and
 recursive Settings management—all fully navigable via your arrow keys!
 
+
+### Optional: aria2c (for faster multi-connection downloads)
+
+For accelerated downloads with multiple connections, install aria2:
+
+- **macOS**: `brew install aria2`
+- **Ubuntu/Debian**: `sudo apt install aria2`
+- **Windows**: `winget install aria2`
+
+Then set it as your download backend:
+```bash
+shinkansen config set download_backend aria2c
+```
+
+
 ### Advanced Command-Line Execution
 
 ```bash
@@ -55,8 +59,9 @@ shinkansen get "naruto"
 # Search for anime
 shinkansen search "naruto"
 
-# List episodes
+# List episodes (use --page to paginate, 0=all)
 shinkansen episodes <session>
+shinkansen episodes <session> --page 2
 
 # Download a single episode
 shinkansen download <session> --episode 1 --quality 720 --name "Naruto"
@@ -86,6 +91,16 @@ shinkansen find "naruto"
 shinkansen config show
 shinkansen config set quality 720
 shinkansen config set create_folder true
+
+# Install/update Playwright Chromium browser
+shinkansen setup
+
+# View and clear download history
+shinkansen history
+shinkansen history --clear
+
+# Enable debug logging
+shinkansen --verbose get "naruto"
 ```
 
 ## Features
@@ -114,6 +129,9 @@ shinkansen config set create_folder true
   the batch
 - **Rich terminal UI** -- Claude-style split screen welcome banners, colored output, live progress bars, tables, and
   spinners
+- **File size preview** -- view episode sizes before downloading
+- **Smart download skipping** -- warns about already-downloaded episodes without re-downloading
+- **Graceful shutdown** -- Ctrl+C cleanly stops workers while finishing active downloads
 
 ## Architecture
 
@@ -128,7 +146,7 @@ AnimePaheClient (client.py)
     |
     v
 Downloader (downloader.py)
-    - pahe.win -> kwik.cx -> direct .mp4 URL
+    - animepahe.si/.com/.org -> kwik.cx/kwik.si -> direct .mp4 URL
     - Split into prepare() + download_prepared() for pipelining
     - Resume support via Range headers
     - Pluggable backends: requests (default) or aria2c
@@ -208,3 +226,4 @@ goes a long way in keeping the project alive and well-maintained.
 - [Rich](https://rich.readthedocs.io/) -- terminal UI
 - [requests](https://requests.readthedocs.io/) -- HTTP client
 - [tqdm](https://tqdm.github.io/) -- progress bars
+- [aria2](https://aria2.github.io/) (optional) -- for faster multi-connection downloads
