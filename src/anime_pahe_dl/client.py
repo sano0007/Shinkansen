@@ -29,10 +29,10 @@ logger = logging.getLogger(__name__)
 
 # AnimePahe mirrors — tried in order
 MIRRORS = [
-    "https://animepahe.si",
     "https://animepahe.com",
-    # "https://animepahe.ru",
     "https://animepahe.org",
+    "https://animepahe.si",
+    # "https://animepahe.ru",
 ]
 
 # Persistent cookie cache — avoids Cloudflare challenge on repeat runs
@@ -258,15 +258,20 @@ class AnimePaheClient:
         # Ensure Cloudflare is cleared before making API calls
         self._ensure_playwright()
 
-        base = self._base_url or MIRRORS[0]
-        url = f"{base}/api?" + "&".join(f"{k}={v}" for k, v in params.items())
-        result = self._playwright_json(url, wait)
-
-        # After Playwright succeeds, transfer cookies to HTTP session
-        # so subsequent HTTP calls may work without Playwright
-        if result:
-            self._transfer_cookies_to_http()
-            self._save_cookies_to_cache()
+        # Try all mirrors with Playwright
+        mirrors_to_try = [self._base_url] if self._base_url else MIRRORS
+        for i, base in enumerate(mirrors_to_try):
+            if i > 0:
+                logger.debug(f"Trying mirror: {base}")
+            url = f"{base}/api?" + "&".join(f"{k}={v}" for k, v in params.items())
+            result = self._playwright_json(url, wait)
+            if result:
+                self._base_url = base
+                # After Playwright succeeds, transfer cookies to HTTP session
+                # so subsequent HTTP calls may work without Playwright
+                self._transfer_cookies_to_http()
+                self._save_cookies_to_cache()
+                return result
 
         return result
 
@@ -383,48 +388,57 @@ class AnimePaheClient:
         Cloudflare shows a "Checking your browser" interstitial that sets
         cookies after ~5 seconds. We wait until the page title no longer
         contains DDoS-related text.
+        Tries all mirrors in order if one fails.
         """
-        base = self._base_url or MIRRORS[0]
-        logger.info(f"Clearing Cloudflare on {base}...")
-        page = self._pw_context.new_page()
-        try:
-            page.goto(base, wait_until="domcontentloaded", timeout=60_000)
+        mirrors_to_try = [self._base_url] if self._base_url else MIRRORS
 
-            # Wait up to 30 seconds for the DDoS challenge to resolve
-            for i in range(30):
-                try:
-                    title = page.title().lower()
-                    if (
-                        "ddos" not in title
-                        and "checking" not in title
-                        and "just a moment" not in title
-                    ):
-                        logger.info(
-                            f"Cloudflare cleared after {i + 1}s (title: '{page.title()}')"
-                        )
-                        break
-                except Exception:
-                    pass
-                page.wait_for_timeout(1000)
-            else:
-                logger.warning("Cloudflare challenge may not have cleared (timeout)")
+        for i, base in enumerate(mirrors_to_try):
+            if i > 0:
+                logger.info(f"Trying alternative server ({base})...")
+            page = self._pw_context.new_page()
+            try:
+                page.goto(base, wait_until="domcontentloaded", timeout=60_000)
 
-            # Extra wait for cookies to settle
-            page.wait_for_timeout(2000)
+                # Wait up to 30 seconds for the DDoS challenge to resolve
+                for j in range(30):
+                    try:
+                        title = page.title().lower()
+                        if (
+                            "ddos" not in title
+                            and "checking" not in title
+                            and "just a moment" not in title
+                        ):
+                            logger.debug(
+                                f"Cloudflare cleared after {j + 1}s (title: '{page.title()}')"
+                            )
+                            break
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(1000)
+                else:
+                    logger.debug("Cloudflare challenge may not have cleared (timeout)")
 
-            self._cf_cleared = True
-            self._base_url = base
+                # Extra wait for cookies to settle
+                page.wait_for_timeout(2000)
 
-            # Transfer cookies to HTTP session
-            self._transfer_cookies_to_http()
+                self._cf_cleared = True
+                self._base_url = base
 
-            # Persist cookies to disk for future runs
-            self._save_cookies_to_cache()
+                # Transfer cookies to HTTP session
+                self._transfer_cookies_to_http()
 
-        except Exception as e:
-            logger.error(f"Cloudflare clearing failed: {e}")
-        finally:
+                # Persist cookies to disk for future runs
+                self._save_cookies_to_cache()
+                return  # Success - exit early
+
+            except Exception as e:
+                logger.debug(f"Mirror {base} failed: {e}")
+                page.close()
+                continue  # Try next mirror
+
             page.close()
+
+        logger.warning("All anime servers unavailable - check your internet connection")
 
     def _playwright_json(self, url: str, wait: int = 5) -> Optional[dict]:
         """Fetch a URL with Playwright and parse JSON from body."""
@@ -436,7 +450,7 @@ class AnimePaheClient:
             body = page.evaluate("document.body.innerText")
             return json.loads(body)
         except Exception as e:
-            logger.error(f"Playwright JSON fetch failed: {e}")
+            logger.debug(f"Playwright fetch failed: {e}")
             return None
         finally:
             page.close()
@@ -591,72 +605,78 @@ class AnimePaheClient:
 
         This navigates the play page with Playwright and extracts the
         dropdown links (which point to pahe.win).
+        Tries all mirrors if one fails.
         """
         self._ensure_playwright()
-        base = self._base_url or MIRRORS[0]
-        play_url = f"{base}/play/{anime_session}/{episode_session}"
+        mirrors_to_try = [self._base_url] if self._base_url else MIRRORS
 
-        page = self._pw_context.new_page()
-        try:
-            page.goto(play_url, wait_until="domcontentloaded", timeout=60_000)
-
-            # Wait for quality dropdown links to appear
+        for base in mirrors_to_try:
+            play_url = f"{base}/play/{anime_session}/{episode_session}"
+            page = self._pw_context.new_page()
             try:
-                page.wait_for_selector(
-                    'a.dropdown-item[target="_blank"]', timeout=30_000
-                )
-            except Exception:
-                page.wait_for_timeout(5000)
+                page.goto(play_url, wait_until="domcontentloaded", timeout=60_000)
 
-            # Extract all download links with metadata
-            items = (
-                page.eval_on_selector_all(
-                    'a.dropdown-item[target="_blank"]',
-                    """els => els.map(e => ({
-                            href: e.href,
-                            text: e.textContent.trim()
-                        }))""",
-                )
-                or []
-            )
-
-            sources = []
-            for item in items:
-                href = item.get("href", "")
-                text = item.get("text", "")
-
-                # Parse quality from text like "Judas · 1080p (137MB) BD"
-                quality_match = re.search(r"(\d{3,4})p", text)
-                quality = quality_match.group(0) if quality_match else "unknown"
-
-                # Parse audio
-                audio = "eng" if "eng" in text.lower() else "jpn"
-
-                # Parse fansub group
-                fansub = text.split("·")[0].strip() if "·" in text else ""
-
-                # Parse size
-                size_match = re.search(r"\((\d+(?:\.\d+)?\s*[MG]B)\)", text)
-                size = size_match.group(1) if size_match else ""
-
-                if href:
-                    sources.append(
-                        Source(
-                            url=href,
-                            quality=quality,
-                            audio=audio,
-                            fansub=fansub,
-                            size=size,
-                        )
+                # Wait for quality dropdown links to appear
+                try:
+                    page.wait_for_selector(
+                        'a.dropdown-item[target="_blank"]', timeout=30_000
                     )
+                except Exception:
+                    page.wait_for_timeout(5000)
 
-            return sources
+                # Extract all download links with metadata
+                items = (
+                    page.eval_on_selector_all(
+                        'a.dropdown-item[target="_blank"]',
+                        """els => els.map(e => ({
+                                href: e.href,
+                                text: e.textContent.trim()
+                            }))""",
+                    )
+                    or []
+                )
 
-        except Exception as e:
-            logger.error(f"Failed to get sources: {e}")
-            return []
-        finally:
+                sources = []
+                for item in items:
+                    href = item.get("href", "")
+                    text = item.get("text", "")
+
+                    # Parse quality from text like "Judas · 1080p (137MB) BD"
+                    quality_match = re.search(r"(\d{3,4})p", text)
+                    quality = quality_match.group(0) if quality_match else "unknown"
+
+                    # Parse audio
+                    audio = "eng" if "eng" in text.lower() else "jpn"
+
+                    # Parse fansub group
+                    fansub = text.split("·")[0].strip() if "·" in text else ""
+
+                    # Parse size
+                    size_match = re.search(r"\((\d+(?:\.\d+)?\s*[MG]B)\)", text)
+                    size = size_match.group(1) if size_match else ""
+
+                    if href:
+                        sources.append(
+                            Source(
+                                url=href,
+                                quality=quality,
+                                audio=audio,
+                                fansub=fansub,
+                                size=size,
+                            )
+                        )
+
+                self._base_url = base
+                return sources
+
+            except Exception as e:
+                logger.error(f"Failed to get sources from {base}: {e}")
+                page.close()
+                continue
+
             page.close()
+
+        return []
 
     def close(self):
         """Clean up browser resources."""
